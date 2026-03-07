@@ -25264,6 +25264,7 @@ export type GetInternalMcpCatalogResponses = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        icon: string | null;
         createdAt: string;
         updatedAt: string;
         labels: Array<{
@@ -25364,6 +25365,7 @@ export type CreateInternalMcpCatalogItemData = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        icon?: string | null;
         labels?: Array<{
             key: string;
             value: string;
@@ -25529,6 +25531,7 @@ export type CreateInternalMcpCatalogItemResponses = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        icon: string | null;
         createdAt: string;
         updatedAt: string;
         labels: Array<{
@@ -25779,6 +25782,7 @@ export type GetInternalMcpCatalogItemResponses = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        icon: string | null;
         createdAt: string;
         updatedAt: string;
         labels: Array<{
@@ -25878,6 +25882,7 @@ export type UpdateInternalMcpCatalogItemData = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        icon?: string | null;
         labels?: Array<{
             key: string;
             value: string;
@@ -26045,6 +26050,7 @@ export type UpdateInternalMcpCatalogItemResponses = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        icon: string | null;
         createdAt: string;
         updatedAt: string;
         labels: Array<{
