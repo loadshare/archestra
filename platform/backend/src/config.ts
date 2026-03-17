@@ -458,6 +458,7 @@ const config = {
       process.env.ARCHESTRA_API_BODY_LIMIT,
       DEFAULT_BODY_LIMIT,
     ),
+    trustProxy: process.env.ARCHESTRA_TRUST_PROXY === "true",
   },
   websocket: {
     path: "/ws",
