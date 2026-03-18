@@ -554,10 +554,9 @@ The following environment variables can be used to configure Archestra Platform.
   - Multiple URLs example: `http://archestra.default.svc:9000,https://api.archestra.example.com`
   - Use case: Set this when your external access URL differs from the internal service URL (common in Kubernetes with ingress/load balancers)
 
-- **`ARCHESTRA_TRUST_PROXY`** - Enables Fastify's built-in `trustProxy` option for deployments behind a TLS-terminating reverse proxy (e.g. AWS ALB, nginx, Cloudflare).
-  - Default: `false`
-  - Values: `true` or `false`
-  - When enabled, Fastify trusts the `X-Forwarded-Proto` header from upstream proxies so that `request.protocol` correctly returns `https` instead of `http`. This is required for OAuth metadata endpoints (`/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`) to emit `https://` URLs. Without this, OAuth clients that enforce HTTPS (such as the Claude.ai MCP connector) will reject the returned metadata.
+- **`ARCHESTRA_TRUST_PROXY`** - Set this when Archestra runs behind a TLS-terminating reverse proxy (e.g. AWS ALB, nginx, Cloudflare) so that generated OAuth metadata and auth URLs use the external `https://` scheme rather than the internal `http://` scheme seen by the backend.
+  - Default: `false` (no proxy trust)
+  - Values: `true`, `false`, or a comma-separated list of trusted proxy IPs/CIDRs (e.g. `10.0.0.0/8,172.16.0.0/12`)
   - Example: `ARCHESTRA_TRUST_PROXY=true`
 
 - **`ARCHESTRA_API_BODY_LIMIT`** - Maximum request body size for LLM proxy and chat routes.
