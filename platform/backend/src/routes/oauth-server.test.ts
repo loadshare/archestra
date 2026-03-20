@@ -4,6 +4,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
+import { parseTrustProxy } from "@/config";
 import { afterEach, beforeEach, describe, expect, test } from "@/test";
 import oauthServerRoutes from "./oauth-server";
 
@@ -141,15 +142,20 @@ describe("OAuth Server - Well-Known Endpoints", () => {
 
     describe("reverse proxy (trustProxy enabled)", () => {
       let proxyApp: FastifyInstance;
+      const originalEnv = process.env;
 
       beforeEach(async () => {
-        proxyApp = Fastify({ trustProxy: true }).withTypeProvider<ZodTypeProvider>();
+        process.env = { ...originalEnv, ARCHESTRA_TRUST_PROXY: "true" };
+        proxyApp = Fastify({
+          trustProxy: parseTrustProxy(process.env.ARCHESTRA_TRUST_PROXY),
+        }).withTypeProvider<ZodTypeProvider>();
         proxyApp.setValidatorCompiler(validatorCompiler);
         proxyApp.setSerializerCompiler(serializerCompiler);
         await proxyApp.register(oauthServerRoutes);
       });
 
       afterEach(async () => {
+        process.env = originalEnv;
         await proxyApp.close();
       });
 
