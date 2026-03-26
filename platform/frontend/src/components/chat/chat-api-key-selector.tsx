@@ -1,19 +1,15 @@
 "use client";
 
-import { providerDisplayNames, type SupportedProvider } from "@shared";
+import {
+  E2eTestId,
+  getChatApiKeySelectorOptionTestId,
+  getChatApiKeySelectorProviderGroupTestId,
+  providerDisplayNames,
+  type SupportedProvider,
+} from "@shared";
 import { Building2, CheckIcon, Key, User, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PromptInputButton } from "@/components/ai-elements/prompt-input";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,
@@ -28,12 +24,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useUpdateConversation } from "@/lib/chat.query";
+import { useUpdateConversation } from "@/lib/chat/chat.query";
 import {
   type ChatApiKey,
   type ChatApiKeyScope,
   useAvailableChatApiKeys,
-} from "@/lib/chat-settings.query";
+} from "@/lib/chat/chat-settings.query";
 
 interface ChatApiKeySelectorProps {
   /** Conversation ID for persisting selection (optional for initial chat) */
@@ -42,8 +38,6 @@ interface ChatApiKeySelectorProps {
   currentConversationChatApiKeyId: string | null;
   /** Whether the selector should be disabled */
   disabled?: boolean;
-  /** Number of messages in current conversation (for mid-conversation warning) */
-  messageCount?: number;
   /** Callback for initial chat mode when no conversationId is available */
   onApiKeyChange?: (apiKeyId: string) => void;
   /** Current provider (derived from selected model) - used for auto-selection */
@@ -76,7 +70,6 @@ export function ChatApiKeySelector({
   conversationId,
   currentConversationChatApiKeyId,
   disabled = false,
-  messageCount = 0,
   onApiKeyChange,
   currentProvider,
   onProviderChange,
@@ -94,7 +87,6 @@ export function ChatApiKeySelector({
   // Combined loading state - wait for both API keys and models
   const isLoading = isLoadingKeys || isModelsLoading;
   const updateConversationMutation = useUpdateConversation();
-  const [pendingKeyId, setPendingKeyId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
@@ -238,12 +230,7 @@ export function ChatApiKeySelector({
       return;
     }
 
-    // If there are messages, show warning dialog
-    if (messageCount > 0) {
-      setPendingKeyId(keyId);
-    } else {
-      applyKeyChange(keyId);
-    }
+    applyKeyChange(keyId);
     handleOpenChange(false);
   };
 
@@ -274,17 +261,6 @@ export function ChatApiKeySelector({
     }
   };
 
-  const handleConfirmChange = () => {
-    if (pendingKeyId) {
-      applyKeyChange(pendingKeyId);
-      setPendingKeyId(null);
-    }
-  };
-
-  const handleCancelChange = () => {
-    setPendingKeyId(null);
-  };
-
   // Don't render until models are loaded (prevents flashing)
   if (isModelsLoading) {
     return null;
@@ -296,90 +272,64 @@ export function ChatApiKeySelector({
   }
 
   return (
-    <>
-      <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverTrigger asChild>
-          <PromptInputButton
-            disabled={disabled}
-            className="max-w-[220px] min-w-0"
-          >
-            <Key className="size-4 shrink-0" />
-          </PromptInputButton>
-        </PopoverTrigger>
-        <PopoverContent className="w-80 p-0" align="start">
-          <Command>
-            <CommandInput placeholder="Search API Keys..." />
-            <CommandList>
-              <CommandEmpty>No API keys found.</CommandEmpty>
-              {/* Group keys by provider */}
-              {availableProviders.map((provider) => (
-                <CommandGroup
-                  key={provider}
-                  heading={
-                    providerDisplayNames[provider as SupportedProvider] ??
-                    provider
-                  }
-                >
-                  {keysByProvider[provider]?.map((key) => (
-                    <CommandItem
-                      key={key.id}
-                      value={`${provider} ${key.name} ${key.teamName || ""}`}
-                      onSelect={() => handleSelectKey(key.id)}
-                      className="cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        {SCOPE_ICONS[key.scope]}
-                        <span className="truncate">{key.name}</span>
-                        {key.scope === "team" && key.teamName && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1 py-0"
-                          >
-                            {key.teamName}
-                          </Badge>
-                        )}
-                      </div>
-                      {currentConversationChatApiKeyId === key.id && (
-                        <CheckIcon className="h-4 w-4 shrink-0" />
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <PromptInputButton
+          disabled={disabled}
+          className="max-w-[220px] min-w-0"
+          data-testid={E2eTestId.ChatApiKeySelectorTrigger}
+        >
+          <Key className="size-4 shrink-0" />
+        </PromptInputButton>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start">
+        <Command>
+          <CommandInput
+            placeholder="Search API Keys..."
+            data-testid={E2eTestId.ChatApiKeySelectorSearchInput}
+          />
+          <CommandList>
+            <CommandEmpty>No API keys found.</CommandEmpty>
+            {/* Group keys by provider */}
+            {availableProviders.map((provider) => (
+              <CommandGroup
+                key={provider}
+                data-testid={getChatApiKeySelectorProviderGroupTestId(provider)}
+                heading={
+                  providerDisplayNames[provider as SupportedProvider] ??
+                  provider
+                }
+              >
+                {keysByProvider[provider]?.map((key) => (
+                  <CommandItem
+                    key={key.id}
+                    data-testid={getChatApiKeySelectorOptionTestId(key.id)}
+                    value={`${provider} ${key.name} ${key.teamName || ""}`}
+                    onSelect={() => handleSelectKey(key.id)}
+                    className="cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {SCOPE_ICONS[key.scope]}
+                      <span className="truncate">{key.name}</span>
+                      {key.scope === "team" && key.teamName && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1 py-0"
+                        >
+                          {key.teamName}
+                        </Badge>
                       )}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-
-      {/* Mid-conversation warning dialog */}
-      <AlertDialog
-        open={!!pendingKeyId}
-        onOpenChange={(open) => {
-          if (!open) {
-            handleCancelChange();
-            onOpenChange?.(false);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Change API key mid-conversation?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Switching API keys during a conversation may affect billing and
-              usage tracking. The new key will be used for all subsequent
-              messages.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmChange}>
-              Change API Key
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+                    </div>
+                    {currentConversationChatApiKeyId === key.id && (
+                      <CheckIcon className="h-4 w-4 shrink-0" />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

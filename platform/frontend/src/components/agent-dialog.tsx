@@ -5,7 +5,9 @@ import {
   type AgentType,
   archestraApiSdk,
   type archestraApiTypes,
+  BUILT_IN_AGENT_IDS,
   DocsPage,
+  E2eTestId,
   getDocsUrl,
   getResourceForAgentType,
   MAX_SUGGESTED_PROMPT_TEXT_LENGTH,
@@ -48,6 +50,10 @@ import {
   type AgentToolsEditorRef,
 } from "@/components/agent-tools-editor";
 import { ModelSelector } from "@/components/chat/model-selector";
+import {
+  formatPermissionRequirement,
+  PermissionRequirementHint,
+} from "@/components/permission-requirement-hint";
 import { SystemPromptEditor } from "@/components/system-prompt-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -115,15 +121,15 @@ import {
   useAgentDelegations,
   useSyncAgentDelegations,
 } from "@/lib/agent-tools.query";
-import { useHasPermissions } from "@/lib/auth.query";
-import { useChatProfileMcpTools } from "@/lib/chat.query";
-import { useModelsByProvider } from "@/lib/chat-models.query";
-import { useAvailableChatApiKeys } from "@/lib/chat-settings.query";
-import config from "@/lib/config";
-import { useFeature } from "@/lib/config.query";
-import { useConnectors } from "@/lib/connector.query";
-import { useKnowledgeBases } from "@/lib/knowledge-base.query";
-import { useAppName } from "@/lib/use-app-name";
+import { useHasPermissions } from "@/lib/auth/auth.query";
+import { useChatProfileMcpTools } from "@/lib/chat/chat.query";
+import { useModelsByProvider } from "@/lib/chat/chat-models.query";
+import { useAvailableChatApiKeys } from "@/lib/chat/chat-settings.query";
+import config from "@/lib/config/config";
+import { useFeature } from "@/lib/config/config.query";
+import { useAppName } from "@/lib/hooks/use-app-name";
+import { useConnectors } from "@/lib/knowledge/connector.query";
+import { useKnowledgeBases } from "@/lib/knowledge/knowledge-base.query";
 import { cn } from "@/lib/utils";
 import {
   getDescriptionPlaceholder,
@@ -133,7 +139,7 @@ import {
 
 const { useIdentityProviders } = config.enterpriseFeatures.core
   ? // biome-ignore lint/style/noRestrictedImports: conditional EE query import for IdP selector
-    await import("@/lib/identity-provider.query.ee")
+    await import("@/lib/auth/identity-provider.query.ee")
   : {
       useIdentityProviders: (_params?: { enabled?: boolean }) => ({
         data: [] as Array<{ id: string; providerId: string; issuer: string }>,
@@ -376,6 +382,7 @@ function AccessLevelSelector({
   onScopeChange,
   isAdmin,
   isTeamAdmin,
+  canReadTeams,
   initialScope,
   agentType,
   teams,
@@ -388,6 +395,7 @@ function AccessLevelSelector({
   onScopeChange: (scope: AgentScope) => void;
   isAdmin: boolean;
   isTeamAdmin: boolean;
+  canReadTeams: boolean;
   initialScope?: AgentScope;
   agentType: AgentType;
   teams: Array<{ id: string; name: string }> | undefined;
@@ -402,7 +410,7 @@ function AccessLevelSelector({
   const isOptionDisabled = (value: string) => {
     if (value === "personal" && initialScope && initialScope !== "personal")
       return true;
-    if (value === "team" && !canShareWithTeams) return true;
+    if (value === "team" && (!canShareWithTeams || !canReadTeams)) return true;
     if (value === "org" && !isAdmin) return true;
     return false;
   };
@@ -418,6 +426,8 @@ function AccessLevelSelector({
   const getDisabledReason = (value: string) => {
     if (value === "personal" && initialScope && initialScope !== "personal")
       return "Shared agents cannot be made personal";
+    if (value === "team" && !canReadTeams)
+      return `Team sharing is unavailable without ${formatPermissionRequirement({ resource: "team", action: "read" })}`;
     if (value === "team" && !canShareWithTeams)
       return `You need ${resourceName}:team-admin permission to share with teams`;
     if (value === "org" && !isAdmin)
@@ -446,7 +456,9 @@ function AccessLevelSelector({
         <div className="space-y-2">
           <Label>Teams{showTeamRequired && " *"}</Label>
           <MultiSelectCombobox
-            disabled={!canShareWithTeams || hasNoAvailableTeams}
+            disabled={
+              !canShareWithTeams || hasNoAvailableTeams || !canReadTeams
+            }
             options={
               teams?.map((team) => ({
                 value: team.id,
@@ -456,10 +468,20 @@ function AccessLevelSelector({
             value={assignedTeamIds}
             onChange={onTeamIdsChange}
             placeholder={
-              hasNoAvailableTeams ? "No teams available" : "Search teams..."
+              !canReadTeams
+                ? "Teams unavailable"
+                : hasNoAvailableTeams
+                  ? "No teams available"
+                  : "Search teams..."
             }
             emptyMessage="No teams found."
           />
+          {!canReadTeams && (
+            <PermissionRequirementHint
+              message="Team selection is unavailable without"
+              permissions={[{ resource: "team", action: "read" }]}
+            />
+          )}
         </div>
       )}
     </SharedVisibilitySelector>
@@ -501,6 +523,7 @@ export function AgentDialog({
   const { data: canReadKnowledgeBase } = useHasPermissions({
     knowledgeBase: ["read"],
   });
+  const { data: canReadTeams } = useHasPermissions({ team: ["read"] });
   const { data: identityProviders = [] } = useIdentityProviders({
     enabled: !!canReadIdentityProviders,
   });
@@ -528,6 +551,7 @@ export function AgentDialog({
       });
       return response.data?.data ?? [];
     },
+    enabled: !!canReadTeams,
   });
   const resource = getResourceForAgentType(agentType);
   const { data: isAdmin } = useHasPermissions({
@@ -572,10 +596,24 @@ export function AgentDialog({
   const [connectorIds, setConnectorIds] = useState<string[]>([]);
   const [autoConfigureOnToolAssignment, setAutoConfigureOnToolAssignment] =
     useState(false);
+  const [dualLlmMaxRounds, setDualLlmMaxRounds] = useState("5");
 
   // Determine type-specific visibility based on agentType prop
   const isInternalAgent = agentType === "agent";
   const isBuiltIn = !!agent?.builtIn;
+  const builtInAgentName = agent?.builtInAgentConfig?.name;
+  const isPolicyConfigBuiltIn =
+    builtInAgentName === BUILT_IN_AGENT_IDS.POLICY_CONFIG;
+  const isDualLlmMainBuiltIn =
+    builtInAgentName === BUILT_IN_AGENT_IDS.DUAL_LLM_MAIN;
+  const isDualLlmQuarantineBuiltIn =
+    builtInAgentName === BUILT_IN_AGENT_IDS.DUAL_LLM_QUARANTINE;
+  const isDualLlmBuiltIn = isDualLlmMainBuiltIn || isDualLlmQuarantineBuiltIn;
+  const showPrimarySettingsCard =
+    !isBuiltIn ||
+    shouldShowDescriptionField({ agentType, isBuiltIn }) ||
+    isPolicyConfigBuiltIn ||
+    isDualLlmMainBuiltIn;
   const showToolsAndSubagents =
     !isBuiltIn &&
     (agentType === "mcp_gateway" ||
@@ -619,7 +657,16 @@ export function AgentDialog({
           agentData.incomingEmailAllowedDomain || "",
         );
         setAutoConfigureOnToolAssignment(
-          agentData.builtInAgentConfig?.autoConfigureOnToolAssignment ?? false,
+          agentData.builtInAgentConfig?.name ===
+            BUILT_IN_AGENT_IDS.POLICY_CONFIG
+            ? agentData.builtInAgentConfig.autoConfigureOnToolAssignment
+            : false,
+        );
+        setDualLlmMaxRounds(
+          agentData.builtInAgentConfig?.name ===
+            BUILT_IN_AGENT_IDS.DUAL_LLM_MAIN
+            ? String(agentData.builtInAgentConfig.maxRounds)
+            : "5",
         );
       } else {
         // Create mode - reset all fields
@@ -643,6 +690,7 @@ export function AgentDialog({
         setIncomingEmailSecurityMode("private");
         setIncomingEmailAllowedDomain("");
         setAutoConfigureOnToolAssignment(false);
+        setDualLlmMaxRounds("5");
       }
       // Reset counts when dialog opens
       setSelectedToolsCount(0);
@@ -766,6 +814,7 @@ export function AgentDialog({
   const handleSave = useCallback(async () => {
     const trimmedName = name.trim();
     const trimmedSystemPrompt = systemPrompt.trim();
+    const parsedDualLlmMaxRounds = Number.parseInt(dualLlmMaxRounds, 10);
 
     if (!trimmedName) {
       toast.error("Name is required");
@@ -775,6 +824,16 @@ export function AgentDialog({
     // Non-admin users must select at least one team for team-scoped resources
     if (!isAdmin && scope === "team" && assignedTeamIds.length === 0) {
       toast.error("Please select at least one team");
+      return;
+    }
+
+    if (
+      isDualLlmMainBuiltIn &&
+      (!Number.isInteger(parsedDualLlmMaxRounds) ||
+        parsedDualLlmMaxRounds < 1 ||
+        parsedDualLlmMaxRounds > 20)
+    ) {
+      toast.error("Max rounds must be an integer between 1 and 20");
       return;
     }
 
@@ -833,16 +892,27 @@ export function AgentDialog({
         : {};
 
       if (agent && isBuiltIn) {
-        // Update built-in agent — only allowed fields
+        const builtInAgentConfig = isPolicyConfigBuiltIn
+          ? {
+              name: BUILT_IN_AGENT_IDS.POLICY_CONFIG,
+              autoConfigureOnToolAssignment,
+            }
+          : isDualLlmMainBuiltIn
+            ? {
+                name: BUILT_IN_AGENT_IDS.DUAL_LLM_MAIN,
+                maxRounds: parsedDualLlmMaxRounds,
+              }
+            : {
+                name: BUILT_IN_AGENT_IDS.DUAL_LLM_QUARANTINE,
+              };
+
         const updated = await updateAgent.mutateAsync({
           id: agent.id,
           data: {
-            builtInAgentConfig: {
-              name:
-                agent.builtInAgentConfig?.name ??
-                "policy-configuration-subagent",
-              autoConfigureOnToolAssignment,
-            },
+            builtInAgentConfig,
+            ...(isDualLlmBuiltIn && {
+              systemPrompt: trimmedSystemPrompt || null,
+            }),
             llmApiKeyId: llmApiKeyId || null,
             llmModel: llmModel || null,
           },
@@ -976,7 +1046,11 @@ export function AgentDialog({
     agent,
     isBuiltIn,
     autoConfigureOnToolAssignment,
+    dualLlmMaxRounds,
+    isDualLlmBuiltIn,
+    isDualLlmMainBuiltIn,
     isInternalAgent,
+    isPolicyConfigBuiltIn,
     showSecurity,
     isAdmin,
     selectedDelegationTargetIds,
@@ -996,15 +1070,32 @@ export function AgentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <div className="flex items-center justify-between pr-6">
-            <DialogTitle className="flex items-center gap-2">
-              {isBuiltIn
-                ? `Edit ${agent?.name ?? "Built-In Agent"}`
-                : getDialogTitle(agentType, !!agent)}
-              {!isBuiltIn && (
-                <AgentBadge type={scope} className="font-normal" />
+          <div className="flex items-start justify-between gap-4 pr-6">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="flex items-center gap-2">
+                {isBuiltIn
+                  ? `Edit ${agent?.name ?? "Built-In Agent"}`
+                  : getDialogTitle(agentType, !!agent)}
+                {!isBuiltIn && (
+                  <AgentBadge type={scope} className="font-normal" />
+                )}
+              </DialogTitle>
+              {isBuiltIn && agent?.description && (
+                <p className="pt-2 text-sm text-muted-foreground">
+                  {agent.description}.{" "}
+                  <a
+                    href={getDocsUrl(
+                      DocsPage.PlatformBuiltInAgentsPolicyConfig,
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    Learn more
+                  </a>
+                </p>
               )}
-            </DialogTitle>
+            </div>
             {agent?.createdAt &&
               (() => {
                 const createdBy = agent.authorName ?? appName;
@@ -1021,19 +1112,6 @@ export function AgentDialog({
                 );
               })()}
           </div>
-          {isBuiltIn && agent?.description && (
-            <p className="text-sm text-muted-foreground">
-              {agent.description}.{" "}
-              <a
-                href={getDocsUrl(DocsPage.PlatformBuiltInAgentsPolicyConfig)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                Learn more
-              </a>
-            </p>
-          )}
         </DialogHeader>
 
         <DialogForm
@@ -1053,67 +1131,83 @@ export function AgentDialog({
             )}
 
             {/* Section 1: Name, Description, Visibility, LLM Configuration */}
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              {/* Name + Icon (hidden for built-in agents, shown in dialog title) */}
-              {!isBuiltIn && (
-                <div className="space-y-4">
-                  <AgentIconPicker
-                    value={icon}
-                    onChange={setIcon}
-                    fallbackType={defaultIconType}
-                  />
-                  <div className="space-y-2">
-                    <Label htmlFor="agentName">Name *</Label>
-                    <Input
-                      id="agentName"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder={getNamePlaceholder(agentType)}
-                      autoFocus
+            {showPrimarySettingsCard && (
+              <div className="rounded-lg border bg-card p-4 space-y-4">
+                {/* Name + Icon (hidden for built-in agents, shown in dialog title) */}
+                {!isBuiltIn && (
+                  <div className="space-y-4">
+                    <AgentIconPicker
+                      value={icon}
+                      onChange={setIcon}
+                      fallbackType={defaultIconType}
                     />
-                  </div>
-                </div>
-              )}
-
-              {/* Description (hidden for built-in agents) */}
-              {shouldShowDescriptionField({ agentType, isBuiltIn }) && (
-                <div className="space-y-2">
-                  <Label htmlFor="agentDescription">Description</Label>
-                  <Textarea
-                    id="agentDescription"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder={getDescriptionPlaceholder(agentType)}
-                    className="min-h-[60px]"
-                  />
-                </div>
-              )}
-
-              {/* Built-in agent config */}
-              {isBuiltIn && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label
-                        htmlFor="auto-configure-on-tool-assignment"
-                        className="text-sm font-medium cursor-pointer"
-                      >
-                        Auto-configure on tool assignment
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        Automatically analyze and configure security policies
-                        when tools are assigned to agents
-                      </p>
+                    <div className="space-y-2">
+                      <Label htmlFor="agentName">Name *</Label>
+                      <Input
+                        id="agentName"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder={getNamePlaceholder(agentType)}
+                        autoFocus
+                      />
                     </div>
-                    <Switch
-                      id="auto-configure-on-tool-assignment"
-                      checked={autoConfigureOnToolAssignment}
-                      onCheckedChange={setAutoConfigureOnToolAssignment}
+                  </div>
+                )}
+
+                {/* Description (hidden for built-in agents) */}
+                {shouldShowDescriptionField({ agentType, isBuiltIn }) && (
+                  <div className="space-y-2">
+                    <Label htmlFor="agentDescription">Description</Label>
+                    <Textarea
+                      id="agentDescription"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder={getDescriptionPlaceholder(agentType)}
+                      className="min-h-[60px]"
                     />
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+
+                {/* Built-in agent config */}
+                {isPolicyConfigBuiltIn && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label
+                          htmlFor="auto-configure-on-tool-assignment"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Auto-configure on tool assignment
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Automatically analyze and configure security policies
+                          when tools are assigned to agents
+                        </p>
+                      </div>
+                      <Switch
+                        id="auto-configure-on-tool-assignment"
+                        checked={autoConfigureOnToolAssignment}
+                        onCheckedChange={setAutoConfigureOnToolAssignment}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isDualLlmMainBuiltIn && (
+                  <div className="space-y-2">
+                    <Label htmlFor="dual-llm-max-rounds">Max rounds</Label>
+                    <Input
+                      id="dual-llm-max-rounds"
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={dualLlmMaxRounds}
+                      onChange={(e) => setDualLlmMaxRounds(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Section 2: Instruction (Agent only) */}
             {isInternalAgent && (
@@ -1121,7 +1215,7 @@ export function AgentDialog({
                 <SystemPromptEditor
                   value={systemPrompt}
                   onChange={setSystemPrompt}
-                  readOnly={isBuiltIn}
+                  readOnly={isBuiltIn && !isDualLlmBuiltIn}
                   variant="section"
                 />
               </div>
@@ -1293,6 +1387,7 @@ export function AgentDialog({
             {/* Section 3: Capabilities (Tools, Subagents, Knowledge Sources) */}
             {showToolsAndSubagents && (
               <div className="rounded-lg border bg-card p-4 space-y-4">
+                <div data-testid={E2eTestId.AgentCapabilitiesSection} />
                 <h3 className="text-sm font-semibold">Capabilities</h3>
 
                 {/* Tools */}
@@ -1300,7 +1395,7 @@ export function AgentDialog({
                   <Label>Tools ({selectedToolsCount})</Label>
                   {!agent && selectedToolsCount > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Some recommended Archestra MCP tools are pre-selected for
+                      Some recommended {appName} MCP tools are pre-selected for
                       you
                     </p>
                   )}
@@ -1506,6 +1601,7 @@ export function AgentDialog({
                     initialScope={agent?.scope}
                     agentType={agentType}
                     teams={teams}
+                    canReadTeams={!!canReadTeams}
                     assignedTeamIds={assignedTeamIds}
                     onTeamIdsChange={setAssignedTeamIds}
                     hasNoAvailableTeams={hasNoAvailableTeams}
@@ -1562,10 +1658,15 @@ export function AgentDialog({
                                     setApiKeySelectorOpen(false);
                                   }}
                                 >
-                                  <span className="text-muted-foreground">
-                                    Dynamic API key (resolved at runtime:
-                                    org-wide → team → personal)
-                                  </span>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-muted-foreground">
+                                      Dynamic API key
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      Resolved at runtime: org-wide → team →
+                                      personal
+                                    </span>
+                                  </div>
                                   {!llmApiKeyId && (
                                     <CheckIcon className="ml-auto h-4 w-4" />
                                   )}

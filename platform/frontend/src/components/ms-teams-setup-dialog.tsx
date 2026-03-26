@@ -1,6 +1,6 @@
 "use client";
 
-import { DocsPage, getDocsUrl } from "@shared";
+import { WEBSITE_URL } from "@shared";
 import JSZip from "jszip";
 import { Download, ExternalLink, Loader2, TriangleAlert } from "lucide-react";
 import * as React from "react";
@@ -11,10 +11,11 @@ import { StepCard } from "@/components/step-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useChatOpsStatus } from "@/lib/chatops.query";
-import { useUpdateChatOpsConfigInQuickstart } from "@/lib/chatops-config.query";
-import { usePublicBaseUrl } from "@/lib/config.query";
-import { useAppName } from "@/lib/use-app-name";
+import { useChatOpsStatus } from "@/lib/chatops/chatops.query";
+import { useUpdateChatOpsConfigInQuickstart } from "@/lib/chatops/chatops-config.query";
+import { usePublicBaseUrl } from "@/lib/config/config.query";
+import { getFrontendDocsUrl } from "@/lib/docs/docs";
+import { useAppName } from "@/lib/hooks/use-app-name";
 
 interface MsTeamsSetupDialogProps {
   open: boolean;
@@ -25,6 +26,7 @@ export function MsTeamsSetupDialog({
   open,
   onOpenChange,
 }: MsTeamsSetupDialogProps) {
+  const docsUrl = getFrontendDocsUrl("platform-ms-teams");
   const configuredAppName = useAppName();
   const mutation = useUpdateChatOpsConfigInQuickstart();
   const { data: chatOpsProviders } = useChatOpsStatus();
@@ -135,16 +137,22 @@ export function MsTeamsSetupDialog({
       description={
         <>
           Follow these steps to connect your {configuredAppName} agents to
-          Microsoft Teams. Find out more in our{" "}
-          <a
-            href={getDocsUrl(DocsPage.PlatformMsTeams)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary underline hover:no-underline"
-          >
-            documentation
-          </a>
-          .
+          Microsoft Teams.
+          {docsUrl && (
+            <>
+              {" "}
+              Find out more in our{" "}
+              <a
+                href={docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline hover:no-underline"
+              >
+                documentation
+              </a>
+              .
+            </>
+          )}
         </>
       }
       steps={stepContents}
@@ -460,9 +468,9 @@ function buildManifest(params: {
     packageName: `com.${nameShort.toLowerCase()}.bot`,
     developer: {
       name: nameShort,
-      websiteUrl: "https://archestra.ai",
-      privacyUrl: "https://archestra.ai/privacy",
-      termsOfUseUrl: "https://archestra.ai/terms",
+      websiteUrl: WEBSITE_URL,
+      privacyUrl: `${WEBSITE_URL}/privacy`,
+      termsOfUseUrl: `${WEBSITE_URL}/terms`,
     },
     name: { short: nameShort, full: nameFull },
     description: {

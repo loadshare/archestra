@@ -336,8 +336,8 @@ export function useUpdateAppearanceSettings(
         appName: updatedOrganization.appName,
         ogDescription: updatedOrganization.ogDescription,
         footerText: updatedOrganization.footerText,
-        helpCenterUrl: updatedOrganization.helpCenterUrl,
-        helpCenterLabel: updatedOrganization.helpCenterLabel,
+        chatLinks: updatedOrganization.chatLinks,
+        chatErrorSupportMessage: updatedOrganization.chatErrorSupportMessage,
         animateChatPlaceholders: updatedOrganization.animateChatPlaceholders,
       });
       toast.success(onSuccessMessage);

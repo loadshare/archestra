@@ -30,6 +30,7 @@ export const RouteId = {
 
   // Config Routes
   GetConfig: "getConfig",
+  GetPublicConfig: "getPublicConfig",
 
   // Auth Routes
   GetDefaultCredentialsStatus: "getDefaultCredentialsStatus",
@@ -59,7 +60,10 @@ export const RouteId = {
   ReauthenticateMcpServer: "reauthenticateMcpServer",
   ReinstallMcpServer: "reinstallMcpServer",
   GetMcpServerInstallationStatus: "getMcpServerInstallationStatus",
-  McpProxy: "mcpProxy",
+  // MCP Gateway Routes
+  McpGatewayGet: "mcpGatewayGet",
+  McpGatewayPost: "mcpGatewayPost",
+  McpProxyPost: "mcpProxyPost", // Frontend session-based proxy to MCP Gateway
 
   // MCP Server Installation Request Routes
   GetMcpServerInstallationRequests: "getMcpServerInstallationRequests",
@@ -139,18 +143,6 @@ export const RouteId = {
   DeleteTrustedDataPolicy: "deleteTrustedDataPolicy",
   BulkUpsertDefaultCallPolicy: "bulkUpsertDefaultCallPolicy",
   BulkUpsertDefaultResultPolicy: "bulkUpsertDefaultResultPolicy",
-
-  // Dual LLM Config Routes
-  GetDefaultDualLlmConfig: "getDefaultDualLlmConfig",
-  GetDualLlmConfigs: "getDualLlmConfigs",
-  CreateDualLlmConfig: "createDualLlmConfig",
-  GetDualLlmConfig: "getDualLlmConfig",
-  UpdateDualLlmConfig: "updateDualLlmConfig",
-  DeleteDualLlmConfig: "deleteDualLlmConfig",
-
-  // Dual LLM Result Routes
-  GetDualLlmResultByToolCallId: "getDualLlmResultByToolCallId",
-  GetDualLlmResultsByInteraction: "getDualLlmResultsByInteraction",
 
   // Proxy Routes - OpenAI
   OpenAiChatCompletionsWithDefaultAgent:

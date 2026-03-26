@@ -1317,6 +1317,69 @@
       "when": 1773689443901,
       "tag": "0187_soft_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1773695991051,
+      "tag": "0188_numerous_yellow_claw",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1773747732694,
+      "tag": "0189_cultured_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1773762737519,
+      "tag": "0190_chat_links_multi",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1773881988315,
+      "tag": "0191_lovely_pete_wisdom",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1774269049316,
+      "tag": "0192_api_key_reference_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1774290125961,
+      "tag": "0193_odd_wolf_cub",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1774297576960,
+      "tag": "0194_orange_doctor_faustus",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1774442794704,
+      "tag": "0195_opposite_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1774488938098,
+      "tag": "0196_easy_shriek",
+      "breakpoints": true
     }
   ]
 }

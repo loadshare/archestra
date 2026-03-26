@@ -45,6 +45,26 @@ import MemberModel from "./member";
 import ToolModel from "./tool";
 
 class AgentModel {
+  static async findAccessContextById(
+    id: string,
+  ): Promise<Pick<
+    Agent,
+    "id" | "organizationId" | "scope" | "authorId"
+  > | null> {
+    const [agent] = await db
+      .select({
+        id: schema.agentsTable.id,
+        organizationId: schema.agentsTable.organizationId,
+        scope: schema.agentsTable.scope,
+        authorId: schema.agentsTable.authorId,
+      })
+      .from(schema.agentsTable)
+      .where(eq(schema.agentsTable.id, id))
+      .limit(1);
+
+    return agent ?? null;
+  }
+
   static async findBasicByOrganizationIdAndIds(params: {
     organizationId: string;
     agentIds: string[];
@@ -586,6 +606,7 @@ class AgentModel {
       teamIds?: string[];
       authorIds?: string[];
       excludeAuthorIds?: string[];
+      excludeOtherPersonalAgents?: boolean;
       labels?: Record<string, string[]>;
     },
     userId?: string,
@@ -664,6 +685,17 @@ class AgentModel {
       const condition = or(
         isNull(schema.agentsTable.authorId),
         notInArray(schema.agentsTable.authorId, filters.excludeAuthorIds),
+      );
+      if (condition) {
+        whereConditions.push(condition);
+      }
+    }
+
+    // Exclude other users' personal agents (show non-personal + own personal)
+    if (filters?.excludeOtherPersonalAgents && userId) {
+      const condition = or(
+        ne(schema.agentsTable.scope, "personal"),
+        eq(schema.agentsTable.authorId, userId),
       );
       if (condition) {
         whereConditions.push(condition);

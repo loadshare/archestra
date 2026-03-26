@@ -764,6 +764,8 @@ export default class K8sDeployment {
     const podSpec: k8s.V1PodSpec = {
       // Fast shutdown for stateless MCP servers (default is 30s)
       terminationGracePeriodSeconds: 5,
+      // Disable automatic Service env var injection to keep MCP pod environments minimal.
+      enableServiceLinks: false,
       // Use dedicated service account if specified (value used directly from catalog)
       ...(localConfig.serviceAccount
         ? {
@@ -1411,7 +1413,7 @@ export default class K8sDeployment {
     if (config.orchestrator.kubernetes.loadKubeconfigFromCurrentCluster) {
       // In-cluster: use service DNS name
       const serviceName = this.constructHttpServiceName();
-      baseUrl = `http://${serviceName}.${this.namespace}.svc.cluster.local:${httpPort}`;
+      baseUrl = `http://${serviceName}.${this.namespace}.svc.${config.orchestrator.kubernetes.clusterDomain}:${httpPort}`;
     } else if (configuredNodePort) {
       // Local dev with fixed nodePort: use it directly (no need to read from service)
       baseUrl = `http://${config.orchestrator.kubernetes.k8sNodeHost || "localhost"}:${configuredNodePort}`;

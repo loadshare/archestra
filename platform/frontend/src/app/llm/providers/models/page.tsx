@@ -3,7 +3,10 @@
 import type { ModelInputModality, ModelOutputModality } from "@shared";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
+  AlertCircle,
   ArrowLeftRight,
+  Eye,
+  EyeOff,
   Pencil,
   RefreshCw,
   RotateCcw,
@@ -20,19 +23,12 @@ import {
   UnknownCapabilitiesBadge,
 } from "@/components/model-badges";
 import { SearchInput } from "@/components/search-input";
+import { StandardFormDialog } from "@/components/standard-dialog";
 import { TableRowActions } from "@/components/table-row-actions";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogForm,
-  DialogHeader,
-  DialogStickyFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -43,18 +39,25 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   type ModelWithApiKeys,
   useModelsWithApiKeys,
   useUpdateModel,
-} from "@/lib/chat-models.query";
-import { useChatApiKeys, useSyncChatModels } from "@/lib/chat-settings.query";
+} from "@/lib/chat/chat-models.query";
+import {
+  useChatApiKeys,
+  useSyncChatModels,
+} from "@/lib/chat/chat-settings.query";
+import { useAppName } from "@/lib/hooks/use-app-name";
 import { useSetProviderAction } from "../layout";
 
 export default function ModelsPage() {
   const { data: models = [], isPending, refetch } = useModelsWithApiKeys();
   const { data: apiKeys = [] } = useChatApiKeys();
   const syncModelsMutation = useSyncChatModels();
+  const updateModel = useUpdateModel();
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [search, setSearch] = useState("");
   const [apiKeyFilter, setApiKeyFilter] = useState<string>("all");
@@ -192,7 +195,7 @@ export default function ModelsPage() {
         size: 120,
         header: "$/M Input",
         cell: ({ row }) => {
-          const price = row.original.capabilities?.pricePerMillionInput;
+          const price = row.original.pricePerMillionInput;
           if (hasUnknownCapabilities(row.original)) return null;
           return price ? (
             <span className="text-sm font-mono">${price}</span>
@@ -206,7 +209,7 @@ export default function ModelsPage() {
         size: 120,
         header: "$/M Output",
         cell: ({ row }) => {
-          const price = row.original.capabilities?.pricePerMillionOutput;
+          const price = row.original.pricePerMillionOutput;
           if (hasUnknownCapabilities(row.original)) return null;
           return price ? (
             <span className="text-sm font-mono">${price}</span>
@@ -216,7 +219,7 @@ export default function ModelsPage() {
         },
       },
       {
-        accessorKey: "capabilities.contextLength",
+        accessorKey: "contextLength",
         size: 100,
         header: "Context",
         cell: ({ row }) => {
@@ -225,9 +228,7 @@ export default function ModelsPage() {
           }
           return (
             <span className="text-sm">
-              {formatContextLength(
-                row.original.capabilities?.contextLength ?? null,
-              )}
+              {formatContextLength(row.original.contextLength ?? null)}
             </span>
           );
         },
@@ -240,6 +241,20 @@ export default function ModelsPage() {
           <TableRowActions
             actions={[
               {
+                icon: row.original.ignored ? (
+                  <Eye className="h-4 w-4" />
+                ) : (
+                  <EyeOff className="h-4 w-4" />
+                ),
+                label: row.original.ignored ? "Show in chat" : "Ignore in chat",
+                onClick: () =>
+                  updateModel.mutate({
+                    id: row.original.id,
+                    ignored: !row.original.ignored,
+                  }),
+                disabled: updateModel.isPending,
+              },
+              {
                 icon: <Pencil className="h-4 w-4" />,
                 label: "Edit",
                 onClick: () => setEditingModel(row.original),
@@ -249,7 +264,7 @@ export default function ModelsPage() {
         ),
       },
     ],
-    [],
+    [updateModel],
   );
 
   return (
@@ -288,6 +303,9 @@ export default function ModelsPage() {
           columns={columns}
           data={filteredModels}
           getRowId={(row) => row.id}
+          getRowClassName={(row) =>
+            row.ignored ? "opacity-60 [&_td]:text-muted-foreground" : undefined
+          }
           hideSelectedCount
           isLoading={isPending}
           hasActiveFilters={Boolean(search || apiKeyFilter !== "all")}
@@ -342,6 +360,7 @@ const OUTPUT_MODALITY_OPTIONS: Array<{
 interface EditModelFormValues {
   customPricePerMillionInput: string;
   customPricePerMillionOutput: string;
+  ignored: boolean;
   inputModalities: string[];
   outputModalities: string[];
 }
@@ -355,6 +374,7 @@ function EditModelDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const appName = useAppName();
   const updateModel = useUpdateModel();
   const providerConfig = PROVIDER_CONFIG[model.provider];
   const fallbackPricing = getFallbackPricing(model);
@@ -376,6 +396,7 @@ function EditModelDialog({
       id: model.id,
       customPricePerMillionInput: inputPrice,
       customPricePerMillionOutput: outputPrice,
+      ignored: values.ignored,
       inputModalities: values.inputModalities as ModelInputModality[],
       outputModalities: values.outputModalities as ModelOutputModality[],
     });
@@ -390,117 +411,157 @@ function EditModelDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Edit Model</DialogTitle>
-          <DialogDescription>
-            Update pricing and modality settings for this model.
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <DialogForm
-            onSubmit={form.handleSubmit(handleSubmit)}
-            className="flex min-h-0 flex-1 flex-col"
+    <StandardFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Edit Model"
+      description="Update pricing and modality settings for this model."
+      size="large"
+      onSubmit={form.handleSubmit(handleSubmit)}
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
           >
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-              {/* Read-only: Provider */}
-              <div className="space-y-1">
-                <span className="text-sm font-medium">Provider</span>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {providerConfig && (
-                    <Image
-                      src={providerConfig.icon}
-                      alt={providerConfig.name}
-                      width={20}
-                      height={20}
-                      className="rounded dark:invert"
-                    />
-                  )}
-                  <span>{providerConfig?.name ?? model.provider}</span>
-                </div>
-              </div>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={updateModel.isPending}>
+            {updateModel.isPending ? "Saving..." : "Save Changes"}
+          </Button>
+        </>
+      }
+    >
+      <Form {...form}>
+        <div className="space-y-4">
+          {/* Read-only: Provider */}
+          <div className="space-y-1">
+            <span className="text-sm font-medium">Provider</span>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              {providerConfig && (
+                <Image
+                  src={providerConfig.icon}
+                  alt={providerConfig.name}
+                  width={20}
+                  height={20}
+                  className="rounded dark:invert"
+                />
+              )}
+              <span>{providerConfig?.name ?? model.provider}</span>
+            </div>
+          </div>
 
-              {/* Read-only: Model ID */}
-              <div className="space-y-1">
-                <span className="text-sm font-medium">Model ID</span>
-                <p className="text-sm font-mono text-muted-foreground">
-                  {model.modelId}
-                </p>
-              </div>
+          {/* Read-only: Model ID */}
+          <div className="space-y-1">
+            <span className="text-sm font-medium">Model ID</span>
+            <p className="text-sm font-mono text-muted-foreground">
+              {model.modelId}
+            </p>
+          </div>
 
-              {/* Pricing */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">
-                    Custom Pricing ($/M tokens)
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs gap-1"
-                    onClick={handleResetPricing}
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    Reset
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={form.control}
-                    name="customPricePerMillionInput"
-                    rules={{
-                      validate: (v) => {
-                        if (!v) return true;
-                        const n = parseFloat(v);
-                        if (Number.isNaN(n) || n < 0)
-                          return "Must be a non-negative number";
-                        return true;
-                      },
-                    }}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Input</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={fallbackPricing.input}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customPricePerMillionOutput"
-                    rules={{
-                      validate: (v) => {
-                        if (!v) return true;
-                        const n = parseFloat(v);
-                        if (Number.isNaN(n) || n < 0)
-                          return "Must be a non-negative number";
-                        return true;
-                      },
-                    }}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Output</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={fallbackPricing.output}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
+          {/* Pricing */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">
+                Custom Pricing ($/M tokens)
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={handleResetPricing}
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="customPricePerMillionInput"
+                rules={{
+                  validate: (v) => {
+                    if (!v) return true;
+                    const n = parseFloat(v);
+                    if (Number.isNaN(n) || n < 0)
+                      return "Must be a non-negative number";
+                    return true;
+                  },
+                }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Input</FormLabel>
+                    <FormControl>
+                      <Input placeholder={fallbackPricing.input} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="customPricePerMillionOutput"
+                rules={{
+                  validate: (v) => {
+                    if (!v) return true;
+                    const n = parseFloat(v);
+                    if (Number.isNaN(n) || n < 0)
+                      return "Must be a non-negative number";
+                    return true;
+                  },
+                }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Output</FormLabel>
+                    <FormControl>
+                      <Input placeholder={fallbackPricing.output} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
 
-              {/* Input Modalities */}
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <span className="text-sm font-medium">Modalities</span>
+              <p className="text-sm text-muted-foreground">
+                These settings describe what the model can accept as input and
+                what it can produce as output.
+              </p>
+            </div>
+            <Alert variant="info">
+              <AlertCircle />
+              <AlertTitle>How {appName} chat support is determined</AlertTitle>
+              <AlertDescription>
+                <ul className="list-disc space-y-1 pl-5">
+                  <li>
+                    Text input means the model can accept normal chat prompts.
+                    Text output means it can return standard chat responses.
+                  </li>
+                  <li>
+                    A model is considered a supported chat model only when both
+                    text input and text output are enabled, and the model is not
+                    marked as ignored.
+                  </li>
+                  <li>
+                    Image, audio, video, and PDF input modalities control
+                    whether chat file upload is enabled for the model and which
+                    uploaded file types are accepted.
+                  </li>
+                  <li>
+                    Output modalities describe the response formats the model
+                    can generate, but they do not enable file uploads by
+                    themselves.
+                  </li>
+                </ul>
+              </AlertDescription>
+            </Alert>
+
+            <div className="grid gap-3 md:grid-cols-2">
               <FormField
                 control={form.control}
                 name="inputModalities"
@@ -510,13 +571,14 @@ function EditModelDialog({
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Input Modalities</FormLabel>
+                    <FormLabel>Input</FormLabel>
                     <FormControl>
                       <MultiSelect
                         items={INPUT_MODALITY_OPTIONS}
                         value={field.value}
                         onValueChange={field.onChange}
                         placeholder="Select input modalities..."
+                        searchable={false}
                       />
                     </FormControl>
                     <FormMessage />
@@ -524,7 +586,6 @@ function EditModelDialog({
                 )}
               />
 
-              {/* Output Modalities */}
               <FormField
                 control={form.control}
                 name="outputModalities"
@@ -534,13 +595,14 @@ function EditModelDialog({
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Output Modalities</FormLabel>
+                    <FormLabel>Output</FormLabel>
                     <FormControl>
                       <MultiSelect
                         items={OUTPUT_MODALITY_OPTIONS}
                         value={field.value}
                         onValueChange={field.onChange}
                         placeholder="Select output modalities..."
+                        searchable={false}
                       />
                     </FormControl>
                     <FormMessage />
@@ -548,22 +610,38 @@ function EditModelDialog({
                 )}
               />
             </div>
-            <DialogStickyFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={updateModel.isPending}>
-                {updateModel.isPending ? "Saving..." : "Save Changes"}
-              </Button>
-            </DialogStickyFooter>
-          </DialogForm>
-        </Form>
-      </DialogContent>
-    </Dialog>
+          </div>
+
+          <Separator />
+
+          <FormField
+            control={form.control}
+            name="ignored"
+            render={({ field }) => (
+              <FormItem className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <FormLabel>Ignore this model</FormLabel>
+                    <p className="text-sm text-muted-foreground">
+                      Ignored models remain synced and editable in this catalog,
+                      but they are excluded from the {appName} chat model
+                      selection list.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+      </Form>
+    </StandardFormDialog>
   );
 }
 
@@ -581,17 +659,14 @@ function formatContextLength(contextLength: number | null): string {
 }
 
 function hasUnknownCapabilities(model: ModelWithApiKeys): boolean {
-  const capabilities = model.capabilities;
-  if (!capabilities) return true;
   const hasInputModalities =
-    capabilities.inputModalities && capabilities.inputModalities.length > 0;
+    model.inputModalities && model.inputModalities.length > 0;
   const hasOutputModalities =
-    capabilities.outputModalities && capabilities.outputModalities.length > 0;
-  const hasToolCalling = capabilities.supportsToolCalling !== null;
-  const hasContextLength = capabilities.contextLength !== null;
+    model.outputModalities && model.outputModalities.length > 0;
+  const hasToolCalling = model.supportsToolCalling !== null;
+  const hasContextLength = model.contextLength !== null;
   const hasPricing =
-    capabilities.pricePerMillionInput !== null ||
-    capabilities.pricePerMillionOutput !== null;
+    model.pricePerMillionInput !== null || model.pricePerMillionOutput !== null;
   return (
     !hasInputModalities &&
     !hasOutputModalities &&
@@ -629,6 +704,7 @@ function getDefaults(model: ModelWithApiKeys): EditModelFormValues {
   return {
     customPricePerMillionInput: model.customPricePerMillionInput ?? "",
     customPricePerMillionOutput: model.customPricePerMillionOutput ?? "",
+    ignored: model.ignored,
     inputModalities: model.inputModalities ?? [],
     outputModalities: model.outputModalities ?? [],
   };

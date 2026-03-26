@@ -3,8 +3,6 @@
 import {
   ARCHESTRA_MCP_CATALOG_ID,
   type archestraApiTypes,
-  DocsPage,
-  getDocsUrl,
   parseFullToolName,
 } from "@shared";
 import {
@@ -20,9 +18,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CodeText } from "@/components/code-text";
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+} from "@/components/ai-elements/code-block";
 import { ConnectionBaseUrlSelect } from "@/components/connection-base-url-select";
-import { CopyableCode } from "@/components/copyable-code";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -44,15 +44,20 @@ import {
   useAgentDelegations,
   useAllProfileTools,
 } from "@/lib/agent-tools.query";
-import { useHasPermissions } from "@/lib/auth.query";
-import { useChatProfileMcpTools } from "@/lib/chat.query";
-import config from "@/lib/config";
-import { useInternalMcpCatalog } from "@/lib/internal-mcp-catalog.query";
+import { useHasPermissions } from "@/lib/auth/auth.query";
+import { useChatProfileMcpTools } from "@/lib/chat/chat.query";
+import config from "@/lib/config/config";
+import { getFrontendDocsUrl } from "@/lib/docs/docs";
+import { useArchestraMcpIdentity } from "@/lib/mcp/archestra-mcp-server";
+import { useInternalMcpCatalog } from "@/lib/mcp/internal-mcp-catalog.query";
 import {
   useMcpServers,
   useMcpServersGroupedByCatalog,
-} from "@/lib/mcp-server.query";
-import { useFetchTeamTokenValue, useTokens } from "@/lib/team-token.query";
+} from "@/lib/mcp/mcp-server.query";
+import {
+  useFetchTeamTokenValue,
+  useTokens,
+} from "@/lib/teams/team-token.query";
 import { useFetchUserTokenValue, useUserToken } from "@/lib/user-token.query";
 
 const { externalProxyUrls, internalProxyUrl } = config.api;
@@ -70,6 +75,8 @@ export function McpConnectionInstructions({
   agentId,
   hideProfileSelector = false,
 }: McpConnectionInstructionsProps) {
+  const { catalogName, serverName } = useArchestraMcpIdentity();
+  const mcpAuthDocsUrl = getFrontendDocsUrl("mcp-authentication");
   const { data: profiles = [] } = useProfiles({
     filters: { agentTypes: ["profile", "mcp_gateway"] },
   });
@@ -281,7 +288,7 @@ export function McpConnectionInstructions({
       JSON.stringify(
         {
           mcpServers: {
-            archestra: {
+            [serverName]: {
               url: mcpUrl,
               headers: {
                 Authorization: `Bearer ${tokenForDisplay}`,
@@ -292,7 +299,7 @@ export function McpConnectionInstructions({
         null,
         2,
       ),
-    [mcpUrl, tokenForDisplay],
+    [mcpUrl, serverName, tokenForDisplay],
   );
 
   const handleExposeToken = useCallback(async () => {
@@ -336,7 +343,7 @@ export function McpConnectionInstructions({
     const fullConfig = JSON.stringify(
       {
         mcpServers: {
-          archestra: {
+          [serverName]: {
             url: mcpUrl,
             headers: {
               Authorization: `Bearer ${tokenForDisplay}`,
@@ -382,7 +389,7 @@ export function McpConnectionInstructions({
     const fullConfig = JSON.stringify(
       {
         mcpServers: {
-          archestra: {
+          [serverName]: {
             url: mcpUrl,
             headers: {
               Authorization: `Bearer ${tokenValue}`,
@@ -401,6 +408,7 @@ export function McpConnectionInstructions({
     setIsCopyingConfig(false);
   }, [
     mcpUrl,
+    serverName,
     isPersonalTokenSelected,
     selectedTeamToken,
     fetchUserTokenMutation,
@@ -457,7 +465,10 @@ export function McpConnectionInstructions({
             <div className="flex flex-wrap gap-2">
               {/* Archestra built-in tools */}
               {archestraTools.length > 0 && (
-                <ReadOnlyArchestraPill tools={archestraTools} />
+                <ReadOnlyArchestraPill
+                  tools={archestraTools}
+                  catalogName={catalogName}
+                />
               )}
               {/* MCP server tools */}
               {Array.from(mcpServerToolGroups.entries()).map(
@@ -525,14 +536,18 @@ export function McpConnectionInstructions({
           </TabsList>
           <p className="text-xs text-muted-foreground">
             For external identity providers, use{" "}
-            <a
-              href={getDocsUrl(DocsPage.McpAuthentication, "external-idp-jwks")}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              JWKS authentication
-            </a>
+            {mcpAuthDocsUrl ? (
+              <a
+                href={`${mcpAuthDocsUrl}#external-idp-jwks`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                JWKS authentication
+              </a>
+            ) : (
+              "JWKS authentication"
+            )}
           </p>
         </div>
 
@@ -612,12 +627,19 @@ export function McpConnectionInstructions({
             <p className="text-sm text-muted-foreground">
               Configuration for MCP clients:
             </p>
-            <div className="bg-muted rounded-md p-3 relative">
-              <div className="flex justify-end gap-2">
+            <CodeBlock
+              code={mcpConfig}
+              language="json"
+              contentStyle={{
+                fontSize: "0.75rem",
+                paddingRight: "5rem",
+              }}
+            >
+              <div className="flex gap-1 rounded-md border bg-background/95 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="gap-2 bg-transparent"
+                  size="icon"
+                  title={showExposedToken ? "Hide token" : "Expose token"}
                   onClick={handleExposeToken}
                   disabled={
                     isLoadingToken ||
@@ -627,26 +649,20 @@ export function McpConnectionInstructions({
                   }
                 >
                   {isLoadingToken ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Loading...</span>
-                    </>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : showExposedToken ? (
-                    <>
-                      <EyeOff className="h-4 w-4" />
-                      <span>Hide token</span>
-                    </>
+                    <EyeOff className="h-4 w-4" />
                   ) : (
-                    <>
-                      <Eye className="h-4 w-4" />
-                      <span>Expose token</span>
-                    </>
+                    <Eye className="h-4 w-4" />
                   )}
+                  <span className="sr-only">
+                    {showExposedToken ? "Hide token" : "Expose token"}
+                  </span>
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="gap-2 bg-transparent"
+                  size="icon"
+                  title="Copy with exposed token"
                   onClick={
                     isPersonalTokenSelected ||
                     hasAdminPermission ||
@@ -657,29 +673,16 @@ export function McpConnectionInstructions({
                   disabled={isCopyingConfig}
                 >
                   {isCopyingConfig ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Copying...</span>
-                    </>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : copiedConfig ? (
-                    <>
-                      <Check className="h-4 w-4 text-green-500" />
-                      <span>Copied!</span>
-                    </>
+                    <Check className="h-4 w-4 text-green-500" />
                   ) : (
-                    <>
-                      <Copy className="h-4 w-4" />
-                      <span>Copy with exposed token</span>
-                    </>
+                    <Copy className="h-4 w-4" />
                   )}
+                  <span className="sr-only">Copy with exposed token</span>
                 </Button>
               </div>
-              <pre className="text-xs whitespace-pre-wrap break-all">
-                <CodeText className="text-sm whitespace pre-wrap break-all">
-                  {mcpConfig}
-                </CodeText>
-              </pre>
-            </div>
+            </CodeBlock>
           </div>
         </TabsContent>
 
@@ -721,13 +724,20 @@ function OAuthConfigBlock({ mcpUrl }: { mcpUrl: string }) {
       <p className="text-sm text-muted-foreground">
         Configuration for MCP clients:
       </p>
-      <CopyableCode value={oauthConfig} toastMessage="Configuration copied">
-        <pre className="text-xs whitespace-pre-wrap break-all">
-          <CodeText className="text-sm whitespace pre-wrap break-all">
-            {oauthConfig}
-          </CodeText>
-        </pre>
-      </CopyableCode>
+      <CodeBlock
+        code={oauthConfig}
+        language="json"
+        contentStyle={{
+          fontSize: "0.75rem",
+          paddingRight: "3.5rem",
+        }}
+      >
+        <CodeBlockCopyButton
+          title="Copy configuration"
+          onCopy={() => toast.success("Configuration copied")}
+          onError={() => toast.error("Failed to copy configuration")}
+        />
+      </CodeBlock>
     </div>
   );
 }
@@ -988,10 +998,14 @@ function ReadOnlySubagentPill({ agent }: ReadOnlySubagentPillProps) {
 
 // Read-only Archestra Tools Pill with popover
 interface ReadOnlyArchestraPillProps {
+  catalogName: string;
   tools: Array<{ id: string; name: string; description?: string | null }>;
 }
 
-function ReadOnlyArchestraPill({ tools }: ReadOnlyArchestraPillProps) {
+function ReadOnlyArchestraPill({
+  catalogName,
+  tools,
+}: ReadOnlyArchestraPillProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -1002,7 +1016,7 @@ function ReadOnlyArchestraPill({ tools }: ReadOnlyArchestraPillProps) {
           size="sm"
           className="h-8 px-3 gap-1.5 text-xs"
         >
-          <span className="font-medium">Archestra</span>
+          <span className="font-medium">{catalogName}</span>
           <span className="text-muted-foreground">({tools.length})</span>
         </Button>
       </PopoverTrigger>
@@ -1015,9 +1029,9 @@ function ReadOnlyArchestraPill({ tools }: ReadOnlyArchestraPillProps) {
       >
         <div className="p-4 border-b flex items-start justify-between gap-2">
           <div>
-            <h4 className="font-semibold">Archestra Built-in Tools</h4>
+            <h4 className="font-semibold">{catalogName} Built-in Tools</h4>
             <p className="text-sm text-muted-foreground mt-1">
-              Built-in tools for managing Archestra resources
+              Built-in tools for managing {catalogName} resources
             </p>
           </div>
           <Button

@@ -1,28 +1,32 @@
 import { createHash } from "node:crypto";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
-  AGENT_TOOL_PREFIX,
-  ARCHESTRA_MCP_SERVER_NAME,
   ARCHESTRA_TOKEN_PREFIX,
-  MCP_SERVER_TOOL_NAME_SEPARATOR,
+  isAgentTool,
   OAUTH_TOKEN_ID_PREFIX,
   parseFullToolName,
-  TOOL_QUERY_KNOWLEDGE_SOURCES_FULL_NAME,
+  TOOL_QUERY_KNOWLEDGE_SOURCES_SHORT_NAME,
 } from "@shared";
 import { eq } from "drizzle-orm";
 import type { FastifyRequest } from "fastify";
 import {
+  archestraMcpBranding,
   executeArchestraTool,
   filterToolNamesByPermission,
   getArchestraMcpTools,
 } from "@/archestra-mcp-server";
 import { userHasPermission } from "@/auth/utils";
+import { LRUCacheManager } from "@/cache-manager";
 import mcpClient, { type TokenAuthContext } from "@/clients/mcp-client";
 import config from "@/config";
 import db, { schema as dbSchema } from "@/database";
@@ -73,38 +77,62 @@ export interface TokenAuthResult {
   rawToken?: string;
 }
 
-/**
- * Create a fresh MCP server for a request
- * In stateless mode, we need to create new server instances per request
- */
-type AgentInfo = {
+export type AgentInfo = {
   name: string;
   id: string;
   agentType?: AgentType;
   labels?: Array<{ key: string; value: string }>;
 };
 
+type TokenHashes = {
+  cacheKey: string;
+  oauthTokenHash: string;
+};
+
+const TOKEN_AUTH_CACHE_TTL_MS = 30_000;
+const TOKEN_AUTH_CACHE_NULL_TTL_MS = 5_000;
+const TOKEN_AUTH_CACHE_MAX_ENTRIES = 1_000;
+const tokenAuthCache = new LRUCacheManager<TokenAuthResult | null>({
+  maxSize: TOKEN_AUTH_CACHE_MAX_ENTRIES,
+  defaultTtl: TOKEN_AUTH_CACHE_TTL_MS,
+});
+
+/**
+ * Creates an MCP server for the given agent.
+ * Pass `preloadedAgent` (e.g. from the proxy's access cache) to skip the
+ * redundant DB lookup that would otherwise happen inside this function.
+ */
 export async function createAgentServer(
   agentId: string,
   tokenAuth?: TokenAuthContext,
-): Promise<{ server: Server; agent: AgentInfo }> {
-  const server = new Server(
+  preloadedAgent?: AgentInfo,
+): Promise<{ server: McpServer; agent: AgentInfo }> {
+  const mcpServer = new McpServer(
     {
       name: `archestra-agent-${agentId}`,
       version: config.api.version,
     },
     {
       capabilities: {
+        resources: {
+          subscribe: true,
+          listChanged: true,
+        },
+        prompts: {},
         tools: { listChanged: false },
       },
     },
   );
+  const { server } = mcpServer;
 
-  const fetchedAgent = await AgentModel.findById(agentId);
-  if (!fetchedAgent) {
-    throw new Error(`Agent not found: ${agentId}`);
+  let agent: AgentInfo;
+  if (preloadedAgent) {
+    agent = preloadedAgent;
+  } else {
+    const fetched = await AgentModel.findById(agentId);
+    if (!fetched) throw new Error(`Agent not found: ${agentId}`);
+    agent = fetched;
   }
-  const agent = fetchedAgent;
 
   // Create a map of Archestra tool names to their titles
   // This is needed because the database schema doesn't include a title field
@@ -132,16 +160,19 @@ export async function createAgentServer(
     const kbToolDescription = await buildKnowledgeSourcesDescription(agentId);
 
     const toolsList = permittedTools.map(
-      ({ name, description, parameters }) => ({
+      ({ name, description, parameters, meta }) => ({
         name,
         title: archestraToolTitles.get(name) || name,
         description:
-          name === TOOL_QUERY_KNOWLEDGE_SOURCES_FULL_NAME && kbToolDescription
+          name ===
+            archestraMcpBranding.getToolName(
+              TOOL_QUERY_KNOWLEDGE_SOURCES_SHORT_NAME,
+            ) && kbToolDescription
             ? kbToolDescription
             : description,
         inputSchema: parameters,
-        annotations: {},
-        _meta: {},
+        annotations: meta?.annotations || {},
+        _meta: meta?._meta || {},
       }),
     );
 
@@ -169,6 +200,53 @@ export async function createAgentServer(
   });
 
   server.setRequestHandler(
+    ReadResourceRequestSchema,
+    async ({ params: { uri } }) => {
+      try {
+        logger.info(
+          { agentId, uri },
+          "MCP gateway read resource request received",
+        );
+        const result = await mcpClient.readResource(uri, agentId, tokenAuth);
+        logger.info(
+          { agentId, uri, resultType: typeof result },
+          "Resource read successful",
+        );
+        return result;
+      } catch (error) {
+        logger.error(
+          {
+            agentId,
+            uri,
+            error: error instanceof Error ? error.message : "Unknown error",
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+          "Resource read failed",
+        );
+        throw {
+          code: -32603,
+          message: "Resource read failed",
+          data: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+  );
+
+  // SEP-1865: resources/list, resources/templates/list, prompts/list
+  // Proxy to all upstream MCP servers connected to this agent and aggregate results.
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return mcpClient.listResources(agentId);
+  });
+
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+    return mcpClient.listResourceTemplates(agentId);
+  });
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return mcpClient.listPrompts(agentId);
+  });
+
+  server.setRequestHandler(
     CallToolRequestSchema,
     async ({ params: { name, arguments: args } }) => {
       const startTime = Date.now();
@@ -193,18 +271,19 @@ export async function createAgentServer(
 
       try {
         // Check if this is an Archestra tool or agent delegation tool
-        const archestraToolPrefix = `${ARCHESTRA_MCP_SERVER_NAME}${MCP_SERVER_TOOL_NAME_SEPARATOR}`;
-        const isArchestraTool = name.startsWith(archestraToolPrefix);
-        const isAgentTool = name.startsWith(AGENT_TOOL_PREFIX);
+        const isArchestraTool = archestraMcpBranding.isToolName(name);
+        const isAgentDelegationTool = isAgentTool(name);
 
-        if (isArchestraTool || isAgentTool) {
+        if (isArchestraTool || isAgentDelegationTool) {
           logger.info(
             {
               agentId,
               toolName: name,
-              toolType: isAgentTool ? "agent-delegation" : "archestra",
+              toolType: isAgentDelegationTool
+                ? "agent-delegation"
+                : "archestra",
             },
-            isAgentTool
+            isAgentDelegationTool
               ? "Agent delegation tool call received"
               : "Archestra MCP tool call received",
           );
@@ -237,7 +316,7 @@ export async function createAgentServer(
           metrics.mcp.reportMcpToolCall({
             agentId: agent.id,
             agentName: agent.name,
-            agentType: agent.agentType,
+            agentType: agent.agentType ?? null,
             mcpServerName,
             toolName: name,
             durationSeconds,
@@ -254,7 +333,7 @@ export async function createAgentServer(
               agentId,
               toolName: name,
             },
-            isAgentTool
+            isAgentDelegationTool
               ? "Agent delegation tool call completed"
               : "Archestra MCP tool call completed",
           );
@@ -263,7 +342,7 @@ export async function createAgentServer(
           try {
             await McpToolCallModel.create({
               agentId,
-              mcpServerName: ARCHESTRA_MCP_SERVER_NAME,
+              mcpServerName: archestraMcpBranding.serverName,
               method: "tools/call",
               toolCall: {
                 id: `archestra-${Date.now()}`,
@@ -328,7 +407,7 @@ export async function createAgentServer(
         metrics.mcp.reportMcpToolCall({
           agentId: agent.id,
           agentName: agent.name,
-          agentType: agent.agentType,
+          agentType: agent.agentType ?? null,
           mcpServerName,
           toolName: name,
           durationSeconds,
@@ -362,13 +441,15 @@ export async function createAgentServer(
             ? result.content
             : [{ type: "text", text: JSON.stringify(result.content) }],
           isError: result.isError,
+          _meta: result._meta,
+          structuredContent: result.structuredContent,
         };
       } catch (error) {
         const durationSeconds = (Date.now() - startTime) / 1000;
         metrics.mcp.reportMcpToolCall({
           agentId: agent.id,
           agentName: agent.name,
-          agentType: agent.agentType,
+          agentType: agent.agentType ?? null,
           mcpServerName,
           toolName: name,
           durationSeconds,
@@ -391,7 +472,7 @@ export async function createAgentServer(
   );
 
   logger.info({ agentId }, "MCP server instance created");
-  return { server, agent };
+  return { server: mcpServer, agent };
 }
 
 /**
@@ -570,18 +651,54 @@ export async function validateUserToken(
  *
  * Returns token auth info if valid, null otherwise.
  */
+export async function validateOAuthToken(params: {
+  profileId: string;
+  tokenValue: string;
+}): Promise<TokenAuthResult | null>;
 export async function validateOAuthToken(
   profileId: string,
   tokenValue: string,
+): Promise<TokenAuthResult | null>;
+export async function validateOAuthToken(
+  profileIdOrParams:
+    | string
+    | {
+        profileId: string;
+        tokenValue: string;
+      },
+  tokenValueArg?: string,
 ): Promise<TokenAuthResult | null> {
+  const profileId =
+    typeof profileIdOrParams === "string"
+      ? profileIdOrParams
+      : profileIdOrParams.profileId;
+  const tokenValue =
+    typeof profileIdOrParams === "string"
+      ? tokenValueArg
+      : profileIdOrParams.tokenValue;
+
+  if (!tokenValue) {
+    return null;
+  }
+
+  const oauthTokenHash = buildOAuthTokenHash(tokenValue);
+  return validateOAuthTokenByHash({ profileId, oauthTokenHash });
+}
+
+async function validateOAuthTokenByHash(params: {
+  profileId: string;
+  oauthTokenHash: string;
+}): Promise<TokenAuthResult | null> {
   try {
-    // Hash the token the same way better-auth stores it (SHA-256, base64url)
-    const tokenHash = createHash("sha256")
-      .update(tokenValue)
-      .digest("base64url");
+    const agent = await AgentModel.findAccessContextById(params.profileId);
+    if (!agent) {
+      return null;
+    }
 
     // Look up the hashed token via the model
-    const accessToken = await OAuthAccessTokenModel.getByTokenHash(tokenHash);
+    const accessToken = await OAuthAccessTokenModel.getByTokenHash(
+      params.oauthTokenHash,
+    );
 
     if (!accessToken) {
       return null;
@@ -590,7 +707,7 @@ export async function validateOAuthToken(
     // Check if associated refresh token has been revoked
     if (accessToken.refreshTokenRevoked) {
       logger.debug(
-        { profileId },
+        { profileId: params.profileId },
         "validateOAuthToken: associated refresh token is revoked",
       );
       return null;
@@ -598,7 +715,10 @@ export async function validateOAuthToken(
 
     // Check token expiry
     if (accessToken.expiresAt < new Date()) {
-      logger.debug({ profileId }, "validateOAuthToken: token expired");
+      logger.debug(
+        { profileId: params.profileId },
+        "validateOAuthToken: token expired",
+      );
       return null;
     }
 
@@ -606,18 +726,7 @@ export async function validateOAuthToken(
     if (!userId) {
       return null;
     }
-
-    // Look up the user's organization membership
-    const membership = await MemberModel.getFirstMembershipForUser(userId);
-    if (!membership) {
-      logger.warn(
-        { profileId, userId },
-        "validateOAuthToken: user has no organization membership",
-      );
-      return null;
-    }
-
-    const organizationId = membership.organizationId;
+    const organizationId = agent.organizationId;
 
     // Check if user has MCP gateway admin permission (can access all gateways)
     const isGatewayAdmin = await userHasPermission(
@@ -639,9 +748,15 @@ export async function validateOAuthToken(
     }
 
     // Non-admin: user can access profile if it's teamless (org-wide) or shares a team
-    if (!(await AgentTeamModel.userHasAgentAccess(userId, profileId, false))) {
+    if (
+      !(await AgentTeamModel.userHasAgentAccess(
+        userId,
+        params.profileId,
+        false,
+      ))
+    ) {
       logger.warn(
-        { profileId, userId },
+        { profileId: params.profileId, userId },
         "validateOAuthToken: profile not accessible via OAuth token (no shared teams)",
       );
       return null;
@@ -658,7 +773,7 @@ export async function validateOAuthToken(
   } catch (error) {
     logger.debug(
       {
-        profileId,
+        profileId: params.profileId,
         error: error instanceof Error ? error.message : "unknown",
       },
       "validateOAuthToken: token validation failed",
@@ -676,6 +791,12 @@ export async function validateMCPGatewayToken(
   profileId: string,
   tokenValue: string,
 ): Promise<TokenAuthResult | null> {
+  const tokenHashes = buildTokenHashes(profileId, tokenValue);
+  const cachedResult = getCachedTokenAuthResult(tokenHashes.cacheKey);
+  if (cachedResult !== undefined) {
+    return cachedResult;
+  }
+
   // Try external IdP JWKS validation first (if profile has an IdP configured)
   if (!tokenValue.startsWith(ARCHESTRA_TOKEN_PREFIX)) {
     const externalIdpResult = await validateExternalIdpToken(
@@ -683,6 +804,7 @@ export async function validateMCPGatewayToken(
       tokenValue,
     );
     if (externalIdpResult) {
+      cacheTokenAuthResult(tokenHashes.cacheKey, externalIdpResult);
       return externalIdpResult;
     }
   }
@@ -690,19 +812,27 @@ export async function validateMCPGatewayToken(
   // Try team/org token validation
   const teamTokenResult = await validateTeamToken(profileId, tokenValue);
   if (teamTokenResult) {
+    cacheTokenAuthResult(tokenHashes.cacheKey, teamTokenResult);
     return teamTokenResult;
   }
 
   // Then try user token validation
   const userTokenResult = await validateUserToken(profileId, tokenValue);
   if (userTokenResult) {
+    cacheTokenAuthResult(tokenHashes.cacheKey, userTokenResult);
     return userTokenResult;
   }
 
   // Try OAuth token validation (for MCP clients like Open WebUI)
   if (!tokenValue.startsWith(ARCHESTRA_TOKEN_PREFIX)) {
-    const oauthResult = await validateOAuthToken(profileId, tokenValue);
+    const oauthResult = await validateOAuthTokenByHash({
+      profileId,
+      oauthTokenHash: tokenHashes.oauthTokenHash,
+    });
     if (oauthResult) {
+      // This cache is intentionally short-lived and process-local. Revocations
+      // may take up to TOKEN_AUTH_CACHE_TTL_MS to fully age out across requests.
+      cacheTokenAuthResult(tokenHashes.cacheKey, oauthResult);
       return oauthResult;
     }
   }
@@ -711,6 +841,7 @@ export async function validateMCPGatewayToken(
     { profileId, tokenPrefix: tokenValue.substring(0, 14) },
     "validateMCPGatewayToken: token validation failed - not found in any token table or access denied",
   );
+  cacheTokenAuthResult(tokenHashes.cacheKey, null);
   return null;
 }
 
@@ -999,6 +1130,35 @@ const kbDescriptionCache = new Map<
   { description: string | null; expiresAt: number }
 >();
 const KB_DESCRIPTION_CACHE_TTL_MS = 30_000;
+
+function getCachedTokenAuthResult(
+  cacheKey: string,
+): TokenAuthResult | null | undefined {
+  return tokenAuthCache.get(cacheKey);
+}
+
+function cacheTokenAuthResult(
+  cacheKey: string,
+  result: TokenAuthResult | null,
+): void {
+  tokenAuthCache.set(
+    cacheKey,
+    result,
+    result ? TOKEN_AUTH_CACHE_TTL_MS : TOKEN_AUTH_CACHE_NULL_TTL_MS,
+  );
+}
+
+function buildTokenHashes(profileId: string, tokenValue: string): TokenHashes {
+  const digest = createHash("sha256").update(tokenValue).digest();
+  return {
+    cacheKey: `${profileId}:${digest.toString("hex")}`,
+    oauthTokenHash: digest.toString("base64url"),
+  };
+}
+
+function buildOAuthTokenHash(tokenValue: string): string {
+  return createHash("sha256").update(tokenValue).digest("base64url");
+}
 
 /**
  * Build a dynamic description for the query_knowledge_sources tool that includes

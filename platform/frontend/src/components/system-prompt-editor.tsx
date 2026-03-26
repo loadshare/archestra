@@ -1,13 +1,13 @@
 "use client";
 
-import {
-  DocsPage,
-  getDocsUrl,
-  SYSTEM_PROMPT_TEMPLATE_EXPRESSIONS,
-} from "@shared";
+import { DocsPage, SYSTEM_PROMPT_TEMPLATE_EXPRESSIONS } from "@shared";
 
 import { Editor } from "@/components/editor";
-import { computeHandlebarsReplaceOffsets } from "@/lib/handlebars-completion";
+import { getFrontendDocsUrl } from "@/lib/docs/docs";
+import {
+  computeHandlebarsReplaceOffsets,
+  shouldShowHandlebarsCompletions,
+} from "@/lib/utils/handlebars-completion";
 
 export function SystemPromptEditor({
   value,
@@ -23,6 +23,11 @@ export function SystemPromptEditor({
   /** "section" uses bold h3 (matching section headings), "default" uses lighter text */
   variant?: "default" | "section";
 }) {
+  const docsUrl = getFrontendDocsUrl(
+    DocsPage.PlatformAgents,
+    "system-prompt-templating",
+  );
+
   return (
     <div className="space-y-2">
       <div>
@@ -41,19 +46,24 @@ export function SystemPromptEditor({
           >
             Handlebars
           </a>{" "}
-          templating — see{" "}
-          <a
-            href={getDocsUrl(
-              DocsPage.PlatformAgents,
-              "system-prompt-templating",
-            )}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-foreground"
-          >
-            docs
-          </a>{" "}
-          for available variables.
+          templating
+          {docsUrl ? (
+            <>
+              {" "}
+              — see{" "}
+              <a
+                href={docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                docs
+              </a>{" "}
+              for available variables.
+            </>
+          ) : (
+            "."
+          )}
         </p>
       </div>
       <div className="border rounded-md overflow-hidden">
@@ -75,6 +85,8 @@ export function SystemPromptEditor({
             automaticLayout: true,
             readOnly,
             placeholder: "Enter instruction for the LLM",
+            quickSuggestions: false,
+            wordBasedSuggestions: "off",
             // Disable EditContext API — it doesn't work inside Radix Dialog portals
             editContext: false,
           }}
@@ -102,9 +114,16 @@ function registerSystemPromptCompletions(monaco: Monaco) {
   const provideCompletionItems = (model: any, position: any) => {
     const lineContent = model.getLineContent(position.lineNumber) as string;
     const col = position.column as number;
+    const textBeforeCursor = lineContent.substring(0, col - 1);
+    const textAfterCursor = lineContent.substring(col - 1);
+
+    if (!shouldShowHandlebarsCompletions(textBeforeCursor)) {
+      return { suggestions: [] };
+    }
+
     const { startOffset, endOffset } = computeHandlebarsReplaceOffsets(
-      lineContent.substring(0, col - 1),
-      lineContent.substring(col - 1),
+      textBeforeCursor,
+      textAfterCursor,
     );
     const range = {
       startLineNumber: position.lineNumber,

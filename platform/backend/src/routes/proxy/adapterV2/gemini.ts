@@ -33,7 +33,7 @@ import type {
   ToolCompressionStats,
   UsageView,
 } from "@/types";
-import { MockGeminiClient } from "../mock-gemini-client";
+import { extractCommonMessageText } from "@/types";
 import {
   hasImageContent,
   isImageTooLarge,
@@ -101,6 +101,7 @@ class GeminiRequestAdapter
     for (const content of contents) {
       const commonMessage: CommonMessage = {
         role: content.role as CommonMessage["role"],
+        content: extractCommonMessageText(content),
       };
 
       // Process parts looking for function responses
@@ -343,6 +344,13 @@ class GeminiRequestAdapter
     }
 
     contents = this.convertToolResultContent(contents);
+
+    // Filter out content entries with empty parts - Gemini API rejects these
+    // with INVALID_ARGUMENT. This can happen when the AI SDK produces content
+    // entries where all parts were filtered (e.g., empty text in assistant messages).
+    contents = contents.filter(
+      (content) => content.parts && content.parts.length > 0,
+    );
 
     return {
       ...this.request,
@@ -1320,9 +1328,6 @@ export const geminiAdapterFactory: LLMProvider<
     apiKey: string | undefined,
     options: CreateClientOptions,
   ): GoogleGenAI {
-    if (options.mockMode) {
-      return new MockGeminiClient() as unknown as GoogleGenAI;
-    }
     const client = createGoogleGenAIClient(apiKey, "[GeminiProxyV2]");
 
     // Wrap with observability for request duration metrics

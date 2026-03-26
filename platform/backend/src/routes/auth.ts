@@ -13,6 +13,7 @@ import {
   UserModel,
   UserTokenModel,
 } from "@/models";
+import { ApiError, constructResponseSchema } from "@/types";
 
 const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.route({
@@ -21,7 +22,7 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     schema: {
       operationId: RouteId.GetDefaultCredentialsStatus,
       description: "Get default credentials status",
-      tags: ["auth"],
+      tags: ["Auth"],
       response: {
         200: z.object({
           enabled: z.boolean(),
@@ -82,7 +83,7 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     method: "POST",
     url: "/api/auth/organization/remove-member",
     schema: {
-      tags: ["auth"],
+      tags: ["Auth"],
     },
     async handler(request, reply) {
       const body = request.body as Record<string, unknown>;
@@ -181,7 +182,7 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     schema: {
       operationId: RouteId.GetOAuthClientInfo,
       description: "Get OAuth client name by client_id",
-      tags: ["auth"],
+      tags: ["Auth"],
       querystring: z.object({ client_id: z.string() }),
       response: {
         200: z.object({ client_name: z.string().nullable() }),
@@ -202,7 +203,7 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     method: "GET",
     url: "/api/auth/oauth2/authorize",
     schema: {
-      tags: ["auth"],
+      tags: ["Auth"],
     },
     async handler(request, reply) {
       const query = request.query as Record<string, string>;
@@ -226,7 +227,10 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const url = new URL(request.url, `http://${request.headers.host}`);
       const headers = new Headers();
       Object.entries(request.headers).forEach(([key, value]) => {
-        if (value) headers.append(key, value.toString());
+        if (!value || shouldSkipForwardedAuthHeader(key)) {
+          return;
+        }
+        headers.append(key, value.toString());
       });
 
       const req = new Request(url.toString(), {
@@ -259,7 +263,7 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     method: "POST",
     url: "/api/auth/oauth2/token",
     schema: {
-      tags: ["auth"],
+      tags: ["Auth"],
     },
     async handler(request, reply) {
       const body = request.body as Record<string, unknown> | undefined;
@@ -333,15 +337,13 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     schema: {
       operationId: RouteId.SubmitOAuthConsent,
       description: "Submit OAuth consent decision (accept or deny)",
-      tags: ["auth"],
+      tags: ["Auth"],
       body: z.object({
         accept: z.boolean(),
         scope: z.string(),
         oauth_query: z.string(),
       }),
-      response: {
-        200: z.object({ redirectTo: z.string() }),
-      },
+      response: constructResponseSchema(z.object({ redirectTo: z.string() })),
     },
     async handler(request, reply) {
       const url = new URL(request.url, `http://${request.headers.host}`);
@@ -384,8 +386,19 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }
       }
 
-      reply.status(response.status);
-      reply.send(response.body ? await response.text() : undefined);
+      if (!response.ok) {
+        throw new ApiError(
+          response.status,
+          response.body
+            ? await response.text()
+            : "OAuth consent request failed",
+        );
+      }
+
+      throw new ApiError(
+        500,
+        "OAuth consent response did not include a redirect",
+      );
     },
   });
 
@@ -402,7 +415,7 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     method: "POST",
     url: "/api/auth/oauth2/register",
     schema: {
-      tags: ["auth"],
+      tags: ["Auth"],
       body: z.record(z.string(), z.unknown()),
     },
     async handler(request, reply) {
@@ -437,7 +450,7 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     method: ["GET", "POST"],
     url: "/api/auth/*",
     schema: {
-      tags: ["auth"],
+      tags: ["Auth"],
     },
     async handler(request, reply) {
       const url = new URL(request.url, `http://${request.headers.host}`);
@@ -516,3 +529,13 @@ const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
 };
 
 export default authRoutes;
+
+function shouldSkipForwardedAuthHeader(headerName: string): boolean {
+  const normalizedHeaderName = headerName.toLowerCase();
+  return (
+    normalizedHeaderName === "content-length" ||
+    normalizedHeaderName === "host" ||
+    normalizedHeaderName === "connection" ||
+    normalizedHeaderName === "transfer-encoding"
+  );
+}

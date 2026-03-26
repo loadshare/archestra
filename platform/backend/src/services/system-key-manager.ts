@@ -1,9 +1,12 @@
 import type { SupportedProvider } from "@shared";
+import { isBedrockIamAuthEnabled } from "@/clients/bedrock-credentials";
 import { isVertexAiEnabled } from "@/clients/gemini-client";
 import { modelsDevClient } from "@/clients/models-dev-client";
 import logger from "@/logging";
 import { ApiKeyModelModel, ChatApiKeyModel, ModelModel } from "@/models";
-import { buildCapabilitiesMap } from "@/services/model-sync";
+import { fetchBedrockModelsViaIam } from "@/routes/chat/model-fetchers/bedrock";
+import { fetchGeminiModelsViaVertexAi } from "@/routes/chat/model-fetchers/gemini";
+import { buildModelsToUpsert } from "@/services/model-sync";
 import type { CreateModel } from "@/types";
 
 /**
@@ -20,11 +23,8 @@ interface KeylessProviderConfig {
 /**
  * Manages system API keys for truly keyless providers.
  *
- * Currently only Vertex AI qualifies as keyless because it uses GCP's
- * Application Default Credentials (ADC) instead of API keys.
- *
- * Other providers (vLLM, Ollama, Bedrock) may have optional authentication
- * but should use the normal API key flow through the UI.
+ * Currently Vertex AI and Bedrock (with IAM auth) qualify as keyless because
+ * they use cloud provider credentials (ADC / IRSA) instead of API keys.
  *
  * System keys are auto-created when a keyless provider is enabled via environment config,
  * and auto-deleted when the provider is disabled.
@@ -32,20 +32,23 @@ interface KeylessProviderConfig {
 class SystemKeyManager {
   /**
    * Registry of keyless providers that need system API keys.
-   * Only Vertex AI is truly keyless (uses ADC).
    */
   private readonly keylessProviders: KeylessProviderConfig[] = [
     {
       provider: "gemini",
       name: "Vertex AI",
       isEnabled: () => isVertexAiEnabled(),
-      // Vertex AI uses ADC, not API keys - we'll use a custom fetch via dynamic import
       customFetch: async () => {
-        // Dynamic import to avoid circular dependency
-        const { fetchGeminiModelsViaVertexAi } = await import(
-          "@/routes/chat/routes.models"
-        );
         const models = await fetchGeminiModelsViaVertexAi();
+        return models.map((m) => ({ id: m.id, displayName: m.displayName }));
+      },
+    },
+    {
+      provider: "bedrock",
+      name: "AWS IAM",
+      isEnabled: () => isBedrockIamAuthEnabled(),
+      customFetch: async () => {
+        const models = await fetchBedrockModelsViaIam();
         return models.map((m) => ({ id: m.id, displayName: m.displayName }));
       },
     },
@@ -171,24 +174,13 @@ class SystemKeyManager {
 
     // Fetch models.dev data for capabilities
     const modelsDevData = await modelsDevClient.fetchModelsFromApi();
-    const capabilitiesMap = buildCapabilitiesMap(modelsDevData, provider);
 
-    // Merge provider models with models.dev capabilities
-    const modelsToUpsert: CreateModel[] = models.map((model) => {
-      const capabilities = capabilitiesMap.get(model.id);
-      return {
-        externalId: `${provider}/${model.id}`,
-        provider,
-        modelId: model.id,
-        description: capabilities?.description ?? null,
-        contextLength: capabilities?.contextLength ?? null,
-        inputModalities: capabilities?.inputModalities ?? null,
-        outputModalities: capabilities?.outputModalities ?? null,
-        supportsToolCalling: capabilities?.supportsToolCalling ?? null,
-        promptPricePerToken: capabilities?.promptPricePerToken ?? null,
-        completionPricePerToken: capabilities?.completionPricePerToken ?? null,
-        lastSyncedAt: new Date(),
-      };
+    // Merge provider models with models.dev capabilities, falling back to
+    // inferred capabilities when models.dev lacks metadata for a specific model.
+    const modelsToUpsert: CreateModel[] = buildModelsToUpsert({
+      provider,
+      models,
+      modelsDevData,
     });
 
     const upsertedModels = await ModelModel.bulkUpsert(modelsToUpsert);

@@ -18,6 +18,7 @@ export const actions = [
   "admin",
   "cancel",
   "enable",
+  "query",
 ] as const;
 
 export const resources = [
@@ -26,8 +27,6 @@ export const resources = [
   "llmProxy",
   "toolPolicy",
   "log",
-  "dualLlmConfig",
-  "dualLlmResult",
   "identityProvider",
   "mcpRegistry",
   "mcpServerInstallation",
@@ -76,8 +75,6 @@ export const resourceLabels: Record<Resource, string> = {
   llmProxy: "LLM Proxies",
   toolPolicy: "Tools & Policies",
   log: "Logs",
-  dualLlmConfig: "Dual LLM Configs",
-  dualLlmResult: "Dual LLM Results",
   organization: "Organization",
   identityProvider: "Identity Providers",
   member: "Users",
@@ -124,8 +121,6 @@ export const resourceDescriptions: Record<Resource, string> = {
   mcpServerInstallation: "Installed MCP servers and their runtime",
   mcpServerInstallationRequest: "Requests for new MCP server installations",
   optimizationRule: "LLM optimization rules for routing to cheaper models",
-  dualLlmConfig: "Dual LLM security configurations",
-  dualLlmResult: "Dual LLM security validation results",
   member: "Users and role assignments",
   ac: "Custom RBAC roles",
   team: "Teams for organizing users and access control",
@@ -179,8 +174,6 @@ export const resourceCategories: Record<string, Resource[]> = {
   Other: [
     "chat",
     "log",
-    "dualLlmConfig",
-    "dualLlmResult",
     "simpleView",
     "chatAgentPicker",
     "chatProviderSettings",

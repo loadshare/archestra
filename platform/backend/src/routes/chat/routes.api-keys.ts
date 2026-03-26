@@ -19,7 +19,7 @@ import {
   TeamModel,
   VirtualApiKeyModel,
 } from "@/models";
-import { testProviderApiKey } from "@/routes/chat/routes.models";
+import { testProviderApiKey } from "@/routes/chat/model-fetchers/registry";
 import {
   assertByosEnabled,
   isByosEnabled,
@@ -138,16 +138,15 @@ const chatApiKeysRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }
       }
 
-      // Compute bestModelId for each key
-      const apiKeysWithBestModel = await Promise.all(
-        apiKeys.map(async (key) => {
-          const bestModel = await ApiKeyModelModel.getBestModel(key.id);
-          return {
-            ...key,
-            bestModelId: bestModel?.modelId ?? null,
-          };
-        }),
-      );
+      const bestModelsByApiKeyId =
+        await ApiKeyModelModel.getBestModelsForApiKeys(
+          apiKeys.map((key) => key.id),
+        );
+
+      const apiKeysWithBestModel = apiKeys.map((key) => ({
+        ...key,
+        bestModelId: bestModelsByApiKeyId.get(key.id)?.modelId ?? null,
+      }));
 
       return reply.send(apiKeysWithBestModel);
     },
@@ -272,14 +271,14 @@ const chatApiKeysRoutes: FastifyPluginAsyncZod = async (fastify) => {
       // For optional-key providers (Ollama, vLLM), sync even without an API key value.
       const canSync =
         actualApiKeyValue || PROVIDERS_WITH_OPTIONAL_API_KEY.has(body.provider);
-      if (canSync && modelSyncService.hasFetcher(body.provider)) {
+      if (canSync) {
         try {
-          await modelSyncService.syncModelsForApiKey(
-            createdApiKey.id,
-            body.provider,
-            actualApiKeyValue ?? "",
-            body.baseUrl,
-          );
+          await modelSyncService.syncModelsForApiKey({
+            apiKeyId: createdApiKey.id,
+            provider: body.provider,
+            apiKeyValue: actualApiKeyValue ?? "",
+            baseUrl: body.baseUrl,
+          });
         } catch (error) {
           // Model sync failure shouldn't block API key creation
           logger.error(

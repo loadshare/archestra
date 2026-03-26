@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { OAUTH_TOKEN_ID_PREFIX } from "@shared";
 import { vi } from "vitest";
+import { archestraMcpBranding } from "@/archestra-mcp-server";
 import type * as originalConfigModule from "@/config";
-import { TeamTokenModel, UserTokenModel } from "@/models";
+import { TeamTokenModel, ToolModel, UserTokenModel } from "@/models";
 import type { JwksValidationResult } from "@/services/jwks-validator";
 import { describe, expect, test } from "@/test";
 
@@ -25,6 +26,7 @@ vi.mock("@/services/jwks-validator", () => ({
 }));
 
 const {
+  createAgentServer,
   validateMCPGatewayToken,
   validateOAuthToken,
   validateExternalIdpToken,
@@ -485,6 +487,41 @@ describe("validateMCPGatewayToken", () => {
 
       expect(result).not.toBeNull();
       expect(result?.tokenId).toBe(`${OAUTH_TOKEN_ID_PREFIX}${accessToken.id}`);
+      expect(result?.userId).toBe(user.id);
+    });
+
+    test("validateOAuthToken uses the target agent organization for multi-org users", async ({
+      makeUser,
+      makeOrganization,
+      makeMember,
+      makeOAuthClient,
+      makeOAuthAccessToken,
+      makeAgent,
+    }) => {
+      const user = await makeUser();
+      const firstOrg = await makeOrganization();
+      const targetOrg = await makeOrganization();
+
+      await makeMember(user.id, firstOrg.id, { role: "member" });
+      await makeMember(user.id, targetOrg.id, { role: "admin" });
+
+      const client = await makeOAuthClient({ userId: user.id });
+
+      const rawToken = `test-multi-org-token-${crypto.randomUUID()}`;
+      const tokenHash = createHash("sha256")
+        .update(rawToken)
+        .digest("base64url");
+
+      const accessToken = await makeOAuthAccessToken(client.clientId, user.id, {
+        token: tokenHash,
+      });
+
+      const agent = await makeAgent({ organizationId: targetOrg.id });
+      const result = await validateOAuthToken(agent.id, rawToken);
+
+      expect(result).not.toBeNull();
+      expect(result?.tokenId).toBe(`${OAUTH_TOKEN_ID_PREFIX}${accessToken.id}`);
+      expect(result?.organizationId).toBe(targetOrg.id);
       expect(result?.userId).toBe(user.id);
     });
   });
@@ -1034,5 +1071,61 @@ describe("buildKnowledgeSourcesDescription", () => {
     const match = result?.match(/Connected sources: (.+?)\./);
     expect(match).not.toBeNull();
     expect(match?.[1]).toBe("jira");
+  });
+});
+
+describe("createAgentServer tools/list", () => {
+  test("returns branded built-in tool names through the MCP tools/list handler", async ({
+    makeAgent,
+    makeOrganization,
+  }) => {
+    const org = await makeOrganization();
+    const agent = await makeAgent({ organizationId: org.id });
+
+    await ToolModel.syncArchestraBuiltInCatalog({
+      organization: {
+        appName: "Acme Control Plane",
+        iconLogo: null,
+      },
+    });
+    await ToolModel.assignArchestraToolsToAgent(
+      agent.id,
+      "00000000-0000-4000-8000-000000000001",
+    );
+
+    archestraMcpBranding.syncFromOrganization({
+      appName: "Acme Control Plane",
+      iconLogo: null,
+    });
+
+    const { server } = await createAgentServer(agent.id);
+    const listToolsHandler = (
+      server.server as unknown as {
+        _requestHandlers: Map<
+          string,
+          (request: unknown) => Promise<{
+            tools: Array<{ name: string; description?: string }>;
+          }>
+        >;
+      }
+    )._requestHandlers.get("tools/list");
+
+    expect(listToolsHandler).toBeDefined();
+    if (!listToolsHandler) {
+      throw new Error("Expected tools/list handler to be registered");
+    }
+
+    const response = await listToolsHandler({
+      method: "tools/list",
+      params: {},
+    });
+
+    expect(
+      response.tools.some((tool) =>
+        tool.name.startsWith("acme_control_plane__"),
+      ),
+    ).toBe(true);
+
+    archestraMcpBranding.syncFromOrganization(null);
   });
 });

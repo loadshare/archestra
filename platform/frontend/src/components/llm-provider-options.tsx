@@ -15,11 +15,13 @@ export function LlmProviderOptionLabel({
   name,
   showComingSoon = false,
   showGeminiVertexAiBadge = false,
+  showBedrockIamBadge = false,
 }: {
   icon: string;
   name: string;
   showComingSoon?: boolean;
   showGeminiVertexAiBadge?: boolean;
+  showBedrockIamBadge?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -39,6 +41,11 @@ export function LlmProviderOptionLabel({
       {showGeminiVertexAiBadge && (
         <Badge variant="secondary" className="ml-2 text-xs">
           Vertex AI
+        </Badge>
+      )}
+      {showBedrockIamBadge && (
+        <Badge variant="secondary" className="ml-2 text-xs">
+          AWS IAM
         </Badge>
       )}
     </div>
@@ -85,6 +92,7 @@ export function LlmProviderSelectItems({
     disabled?: boolean;
     showComingSoon?: boolean;
     showGeminiVertexAiBadge?: boolean;
+    showBedrockIamBadge?: boolean;
   }[];
 }) {
   return options.map((option) => (
@@ -98,6 +106,7 @@ export function LlmProviderSelectItems({
         name={option.name}
         showComingSoon={option.showComingSoon}
         showGeminiVertexAiBadge={option.showGeminiVertexAiBadge}
+        showBedrockIamBadge={option.showBedrockIamBadge}
       />
     </SelectItem>
   ));
@@ -112,10 +121,15 @@ export function LlmProviderApiKeySelectItems({
     providerName: string;
     keyName: string;
     secondaryLabel?: string;
+    disabled?: boolean;
   }[];
 }) {
   return options.map((option) => (
-    <SelectItem key={option.value} value={option.value}>
+    <SelectItem
+      key={option.value}
+      value={option.value}
+      disabled={option.disabled}
+    >
       <LlmProviderApiKeyOptionLabel
         icon={option.icon}
         providerName={option.providerName}

@@ -1,14 +1,13 @@
 "use client";
 
 import type { UIMessage } from "@ai-sdk/react";
-import { PROVIDERS_WITH_OPTIONAL_API_KEY } from "@shared";
+import { E2eTestId } from "@shared";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bot,
   FileText,
   Globe,
-  Loader2,
   MoreVertical,
   Plus,
   Share2,
@@ -24,7 +23,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useForm } from "react-hook-form";
 import { CreateCatalogDialog } from "@/app/mcp/registry/_parts/create-catalog-dialog";
 import { CustomServerRequestDialog } from "@/app/mcp/registry/_parts/custom-server-request-dialog";
 import { AgentDialog } from "@/components/agent-dialog";
@@ -36,7 +34,7 @@ import { Suggestion } from "@/components/ai-elements/suggestion";
 import { AppLogo } from "@/components/app-logo";
 import { ButtonWithTooltip } from "@/components/button-with-tooltip";
 import { BrowserPanel } from "@/components/chat/browser-panel";
-import { ChatHelpLink } from "@/components/chat/chat-help-link";
+import { ChatLinkButton } from "@/components/chat/chat-help-link";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ConversationArtifactPanel } from "@/components/chat/conversation-artifact";
 import {
@@ -46,11 +44,8 @@ import {
 import { RightSidePanel } from "@/components/chat/right-side-panel";
 import { ShareConversationDialog } from "@/components/chat/share-conversation-dialog";
 import { StreamTimeoutWarning } from "@/components/chat/stream-timeout-warning";
-import {
-  ChatApiKeyForm,
-  type ChatApiKeyFormValues,
-  PLACEHOLDER_KEY,
-} from "@/components/chat-api-key-form";
+import type { ChatApiKeyFormValues } from "@/components/chat-api-key-form";
+import { CreateChatApiKeyDialog } from "@/components/create-chat-api-key-dialog";
 import { LoadingSpinner } from "@/components/loading";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,15 +55,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogForm,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,37 +73,37 @@ import { TruncatedTooltip } from "@/components/ui/truncated-tooltip";
 import { TypingText } from "@/components/ui/typing-text";
 import { Version } from "@/components/version";
 import { useDefaultAgentId, useInternalAgents } from "@/lib/agent.query";
-import { useHasPermissions } from "@/lib/auth.query";
-import { useRecentlyGeneratedTitles } from "@/lib/chat.hook";
+import { useHasPermissions } from "@/lib/auth/auth.query";
+import { useRecentlyGeneratedTitles } from "@/lib/chat/chat.hook";
 import {
   fetchConversationEnabledTools,
   useConversation,
   useCreateConversation,
+  useHasPlaywrightMcpTools,
   useStopChatStream,
   useUpdateConversation,
   useUpdateConversationEnabledTools,
-} from "@/lib/chat.query";
-import { useChatModels, useModelsByProvider } from "@/lib/chat-models.query";
+} from "@/lib/chat/chat.query";
+import { useChatAgentState } from "@/lib/chat/chat-agent-state.hook";
+import {
+  useChatModels,
+  useModelsByProvider,
+} from "@/lib/chat/chat-models.query";
 import {
   type SupportedProvider,
   useChatApiKeys,
-  useCreateChatApiKey,
-} from "@/lib/chat-settings.query";
-import { useConversationShare } from "@/lib/chat-share.query";
+} from "@/lib/chat/chat-settings.query";
+import { useConversationShare } from "@/lib/chat/chat-share.query";
 import {
   conversationStorageKeys,
   getConversationDisplayTitle,
-} from "@/lib/chat-utils";
-import { useConfig, useFeature } from "@/lib/config.query";
-import { useDialogs } from "@/lib/dialog.hook";
-import { useChatSession } from "@/lib/global-chat.context";
-import { useOrganization } from "@/lib/organization.query";
+} from "@/lib/chat/chat-utils";
+import { useChatSession } from "@/lib/chat/global-chat.context";
 import {
   applyPendingActions,
   clearPendingActions,
   getPendingActions,
-} from "@/lib/pending-tool-state";
-import { useTeams } from "@/lib/team.query";
+} from "@/lib/chat/pending-tool-state";
 import {
   clearModelOverride,
   getSavedAgent,
@@ -127,8 +113,12 @@ import {
   resolveModelForAgent,
   saveAgent,
   saveModelOverride,
-} from "@/lib/use-chat-preferences";
-import { useIsMobile } from "@/lib/use-mobile.hook";
+} from "@/lib/chat/use-chat-preferences";
+import { useConfig } from "@/lib/config/config.query";
+import { useDialogs } from "@/lib/hooks/use-dialog";
+import { useIsMobile } from "@/lib/hooks/use-mobile";
+import { useOrganization } from "@/lib/organization.query";
+import { useTeams } from "@/lib/teams/team.query";
 import { cn } from "@/lib/utils";
 import ArchestraPromptInput from "./prompt-input";
 
@@ -195,6 +185,9 @@ export default function ChatPage() {
   });
   const { data: canReadTeams } = useHasPermissions({
     team: ["read"],
+  });
+  const { data: canUpdateAgent } = useHasPermissions({
+    agent: ["team-admin"],
   });
   const { data: teams } = useTeams({ enabled: !!canReadTeams });
 
@@ -699,30 +692,6 @@ export default function ChatPage() {
     chatModels,
   ]);
 
-  // Find the specific internal agent for this conversation (if any)
-  const _conversationInternalAgent = conversation?.agentId
-    ? internalAgents.find((a) => a.id === conversation.agentId)
-    : undefined;
-
-  // Get current agent info
-  const currentProfileId = conversation?.agentId;
-  const browserToolsAgentId = conversationId
-    ? (conversation?.agentId ?? conversation?.agent?.id)
-    : (initialAgentId ?? undefined);
-
-  const playwrightSetupAgentId = conversationId
-    ? (conversation?.agentId ?? undefined)
-    : (initialAgentId ?? undefined);
-  const {
-    isLoading: isPlaywrightCheckLoading,
-    isRequired: isPlaywrightSetupRequired,
-  } = usePlaywrightSetupRequired(playwrightSetupAgentId, conversationId, {
-    enabled: hasChatAccess,
-  });
-  // Treat both loading and required as "visible" for disabling submit, hiding arrow, etc.
-  const isPlaywrightSetupVisible =
-    isPlaywrightSetupRequired || isPlaywrightCheckLoading;
-
   // Create conversation mutation (requires agentId)
   const createConversationMutation = useCreateConversation();
 
@@ -783,9 +752,61 @@ export default function ChatPage() {
   const addToolResult = chatSession?.addToolResult;
   const addToolApprovalResponse = chatSession?.addToolApprovalResponse;
   const pendingCustomServerToolCall = chatSession?.pendingCustomServerToolCall;
+  const optimisticToolCalls = chatSession?.optimisticToolCalls ?? [];
   const setPendingCustomServerToolCall =
     chatSession?.setPendingCustomServerToolCall;
   const tokenUsage = chatSession?.tokenUsage;
+
+  const {
+    conversationAgentId,
+    activeAgentId,
+    promptAgentId,
+    swappedAgentName,
+  } = useChatAgentState({
+    conversation,
+    initialAgentId,
+    messages,
+    agents: internalAgents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+    })),
+  });
+
+  // Find the specific internal agent for this conversation (if any)
+  const _conversationInternalAgent = conversationAgentId
+    ? internalAgents.find((a) => a.id === conversationAgentId)
+    : undefined;
+
+  // Get current agent info
+  const currentProfileId = conversationAgentId;
+  const browserToolsAgentId = conversationId
+    ? (conversationAgentId ?? promptAgentId ?? undefined)
+    : (initialAgentId ?? undefined);
+
+  const playwrightSetupAgentId = conversationId
+    ? (conversationAgentId ?? undefined)
+    : (initialAgentId ?? undefined);
+
+  const { hasPlaywrightMcpTools, isLoading: isLoadingBrowserTools } =
+    useHasPlaywrightMcpTools(browserToolsAgentId, conversationId);
+  // Show while loading so it doesn't flash hidden for members whose agent already has playwright
+  // tools. Once loading is done, hides only if the user lacks permission AND agent has no tools.
+  const showBrowserButton =
+    canUpdateAgent ||
+    hasPlaywrightMcpTools ||
+    (!!conversationId && isLoadingConversation) ||
+    (!!browserToolsAgentId && isLoadingBrowserTools);
+
+  const {
+    isLoading: isPlaywrightCheckLoading,
+    isRequired: isPlaywrightSetupRequired,
+  } = usePlaywrightSetupRequired(playwrightSetupAgentId, conversationId, {
+    enabled: hasChatAccess && canUpdateAgent !== false,
+  });
+  // Treat both loading and required as "visible" for disabling submit, hiding arrow, etc.
+  // Only applies to users who can actually perform the installation.
+  const isPlaywrightSetupVisible =
+    !!canUpdateAgent && (isPlaywrightSetupRequired || isPlaywrightCheckLoading);
 
   // Use actual token usage when available from the stream (no fallback to estimation)
   const tokensUsed = tokenUsage?.totalTokens;
@@ -908,6 +929,36 @@ export default function ChatPage() {
     sendMessage,
     status,
     messages.length,
+  ]);
+
+  // Poll for the assistant response when the page was reloaded mid-stream.
+  // After reload the DB may only contain the user message (persisted early by
+  // the backend). The assistant response arrives once the backend stream
+  // finishes. We poll until the last message is no longer a user message.
+  useEffect(() => {
+    if (!conversationId || status === "streaming" || status === "submitted") {
+      return;
+    }
+
+    const lastMsg = conversation?.messages?.at(-1) as UIMessage | undefined;
+    const isWaitingForAssistant =
+      lastMsg?.role === "user" && messages.length > 0;
+
+    if (!isWaitingForAssistant) return;
+
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({
+        queryKey: ["conversation", conversationId],
+      });
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [
+    conversationId,
+    conversation?.messages,
+    messages.length,
+    status,
+    queryClient,
   ]);
 
   // Merge database UUIDs from backend into local message state
@@ -1317,9 +1368,6 @@ export default function ChatPage() {
     selectConversation,
   ]);
 
-  // Determine which agent ID to use for prompt input
-  const activeAgentId = conversation?.agent?.id ?? initialAgentId;
-
   // Check if the conversation's agent was deleted
   const isAgentDeleted = conversationId && conversation && !conversation.agent;
 
@@ -1513,21 +1561,25 @@ export default function ChatPage() {
                   Artifact
                 </Button>
 
-                <div className="w-px h-4 bg-border" />
-                <Button
-                  variant={
-                    isBrowserPanelOpen && !isPlaywrightSetupVisible
-                      ? "secondary"
-                      : "ghost"
-                  }
-                  size="sm"
-                  onClick={toggleBrowserPanel}
-                  className="text-xs"
-                  disabled={isPlaywrightSetupVisible}
-                >
-                  <Globe className="h-3 w-3 mr-1" />
-                  Browser
-                </Button>
+                {showBrowserButton && (
+                  <>
+                    <div className="w-px h-4 bg-border" />
+                    <Button
+                      variant={
+                        isBrowserPanelOpen && !isPlaywrightSetupVisible
+                          ? "secondary"
+                          : "ghost"
+                      }
+                      size="sm"
+                      onClick={toggleBrowserPanel}
+                      className="text-xs"
+                      disabled={isPlaywrightSetupVisible}
+                    >
+                      <Globe className="h-3 w-3 mr-1" />
+                      Browser
+                    </Button>
+                  </>
+                )}
               </div>
               {/* Right side - mobile: 3-dot dropdown */}
               <div className="flex md:hidden items-center gap-2 flex-shrink-0">
@@ -1565,15 +1617,17 @@ export default function ChatPage() {
                       <FileText className="h-4 w-4" />
                       {isArtifactOpen ? "Hide Artifact" : "Show Artifact"}
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={toggleBrowserPanel}
-                      disabled={isPlaywrightSetupVisible}
-                    >
-                      <Globe className="h-4 w-4" />
-                      {isBrowserPanelOpen && !isPlaywrightSetupVisible
-                        ? "Hide Browser"
-                        : "Show Browser"}
-                    </DropdownMenuItem>
+                    {showBrowserButton && (
+                      <DropdownMenuItem
+                        onSelect={toggleBrowserPanel}
+                        disabled={isPlaywrightSetupVisible}
+                      >
+                        <Globe className="h-4 w-4" />
+                        {isBrowserPanelOpen && !isPlaywrightSetupVisible
+                          ? "Hide Browser"
+                          : "Show Browser"}
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -1632,7 +1686,7 @@ export default function ChatPage() {
               {/* Chat content - hidden on mobile when panels are open */}
               <div
                 className={cn(
-                  "flex-1 overflow-y-auto relative",
+                  "flex-1 min-h-0 relative",
                   (isArtifactOpen ||
                     (isBrowserPanelOpen && !isPlaywrightSetupVisible)) &&
                     "hidden md:block",
@@ -1641,14 +1695,19 @@ export default function ChatPage() {
                 <ChatMessages
                   conversationId={conversationId}
                   agentId={currentProfileId || initialAgentId || undefined}
-                  agentName={
-                    _conversationInternalAgent?.name ||
-                    internalAgents.find((a) => a.id === initialAgentId)?.name
-                  }
                   messages={messages}
                   status={status}
+                  optimisticToolCalls={optimisticToolCalls}
                   isLoadingConversation={isLoadingConversation}
                   onMessagesUpdate={setMessages}
+                  agentName={
+                    (currentProfileId
+                      ? internalAgents.find((a) => a.id === currentProfileId)
+                      : internalAgents.find((a) => a.id === initialAgentId)
+                    )?.name
+                  }
+                  selectedModel={conversation?.selectedModel ?? initialModel}
+                  modelSource={conversationModelSource ?? initialModelSource}
                   onUserMessageEdit={(
                     editedMessage,
                     updatedMessages,
@@ -1708,8 +1767,7 @@ export default function ChatPage() {
                         status={status}
                         selectedModel={conversation?.selectedModel ?? ""}
                         onModelChange={handleModelChange}
-                        messageCount={messages.length}
-                        agentId={conversation?.agent?.id ?? activeAgentId}
+                        agentId={promptAgentId ?? activeAgentId}
                         conversationId={conversationId}
                         currentConversationChatApiKeyId={
                           conversation?.chatApiKeyId
@@ -1729,7 +1787,8 @@ export default function ChatPage() {
                         }
                         submitDisabled={isPlaywrightSetupVisible}
                         isPlaywrightSetupVisible={isPlaywrightSetupVisible}
-                        selectorAgentId={conversation?.agentId ?? null}
+                        selectorAgentId={activeAgentId}
+                        selectorAgentName={swappedAgentName ?? undefined}
                         onAgentChange={handleConversationAgentChange}
                         modelSource={conversationModelSource}
                         onResetModelOverride={
@@ -1763,15 +1822,19 @@ export default function ChatPage() {
                   }
                 }}
               >
-                {organization?.helpCenterUrl && (
-                  <div className="absolute top-4 right-4 z-10">
-                    <ChatHelpLink
-                      url={organization.helpCenterUrl}
-                      label={organization.helpCenterLabel}
-                    />
-                  </div>
-                )}
-                {isPlaywrightSetupRequired && (
+                {organization?.chatLinks &&
+                  organization.chatLinks.length > 0 && (
+                    <div className="absolute top-4 right-4 z-10 flex flex-wrap justify-end gap-2 max-w-[min(100%,36rem)]">
+                      {organization.chatLinks.map((link) => (
+                        <ChatLinkButton
+                          key={`${link.label}-${link.url}`}
+                          url={link.url}
+                          label={link.label}
+                        />
+                      ))}
+                    </div>
+                  )}
+                {isPlaywrightSetupRequired && canUpdateAgent && (
                   <PlaywrightInstallDialog
                     agentId={playwrightSetupAgentId}
                     conversationId={conversationId}
@@ -1924,57 +1987,6 @@ const DEFAULT_FORM_VALUES: ChatApiKeyFormValues = {
 function NoApiKeySetup() {
   const router = useRouter();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const createMutation = useCreateChatApiKey();
-  const byosEnabled = useFeature("byosEnabled");
-  const geminiVertexAiEnabled = useFeature("geminiVertexAiEnabled");
-
-  const form = useForm<ChatApiKeyFormValues>({
-    defaultValues: DEFAULT_FORM_VALUES,
-  });
-
-  useEffect(() => {
-    if (isDialogOpen) {
-      form.reset(DEFAULT_FORM_VALUES);
-    }
-  }, [isDialogOpen, form]);
-
-  const formValues = form.watch();
-  const isValid =
-    formValues.apiKey !== PLACEHOLDER_KEY &&
-    formValues.name &&
-    (formValues.scope !== "team" || formValues.teamId) &&
-    (byosEnabled
-      ? formValues.vaultSecretPath && formValues.vaultSecretKey
-      : PROVIDERS_WITH_OPTIONAL_API_KEY.has(formValues.provider) ||
-        formValues.apiKey);
-
-  const handleCreate = form.handleSubmit(async (values) => {
-    try {
-      await createMutation.mutateAsync({
-        name: values.name,
-        provider: values.provider,
-        apiKey: values.apiKey || undefined,
-        baseUrl: values.baseUrl || undefined,
-        scope: values.scope,
-        teamId:
-          values.scope === "team" && values.teamId ? values.teamId : undefined,
-        isPrimary: values.isPrimary,
-        vaultSecretPath:
-          byosEnabled && values.vaultSecretPath
-            ? values.vaultSecretPath
-            : undefined,
-        vaultSecretKey:
-          byosEnabled && values.vaultSecretKey
-            ? values.vaultSecretKey
-            : undefined,
-      });
-      setIsDialogOpen(false);
-      // Navigate to clean /chat URL so there's no stale conversation param
-      router.push("/chat");
-    } catch {
-      // Error handled by mutation
-    }
-  });
 
   return (
     <div className="flex h-full w-full items-center justify-center p-8">
@@ -1985,51 +1997,26 @@ function NoApiKeySetup() {
             Connect an LLM provider to start chatting
           </p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
+        <Button
+          data-testid={E2eTestId.QuickstartAddApiKeyButton}
+          onClick={() => setIsDialogOpen(true)}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Add API Key
         </Button>
       </div>
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add API Key</DialogTitle>
-            <DialogDescription>
-              Add an LLM provider API key to start chatting
-            </DialogDescription>
-          </DialogHeader>
-          <DialogForm onSubmit={handleCreate}>
-            <div className="py-2">
-              <ChatApiKeyForm
-                mode="full"
-                showConsoleLink
-                form={form}
-                isPending={createMutation.isPending}
-                geminiVertexAiEnabled={geminiVertexAiEnabled}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={!isValid || createMutation.isPending}
-              >
-                {createMutation.isPending && (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                )}
-                Test & Create
-              </Button>
-            </DialogFooter>
-          </DialogForm>
-        </DialogContent>
-      </Dialog>
+      <CreateChatApiKeyDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        title="Add API Key"
+        description="Add an LLM provider API key to start chatting"
+        defaultValues={DEFAULT_FORM_VALUES}
+        showConsoleLink
+        onSuccess={() => {
+          // Navigate to clean /chat URL so there's no stale conversation param
+          router.push("/chat");
+        }}
+      />
     </div>
   );
 }

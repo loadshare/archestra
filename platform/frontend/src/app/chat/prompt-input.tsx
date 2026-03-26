@@ -9,9 +9,10 @@ import {
   supportsFileUploads,
 } from "@shared";
 import type { ChatStatus } from "ai";
-import { MoreVerticalIcon, PaperclipIcon, RotateCcwIcon } from "lucide-react";
+import { MoreVerticalIcon, PaperclipIcon, XIcon } from "lucide-react";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { ModelSelectorLogo } from "@/components/ai-elements/model-selector";
 import {
   PromptInput,
@@ -38,6 +39,7 @@ import {
   providerToLogoProvider,
 } from "@/components/chat/model-selector";
 import { PlaywrightInstallInline } from "@/components/chat/playwright-install-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -50,13 +52,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useProfile } from "@/lib/agent.query";
-import { useHasPermissions } from "@/lib/auth.query";
-import { useChatPlaceholder } from "@/lib/chat-placeholder.hook";
-import { conversationStorageKeys } from "@/lib/chat-utils";
+import { useHasPermissions } from "@/lib/auth/auth.query";
+import { useChatPlaceholder } from "@/lib/chat/chat-placeholder.hook";
+import { conversationStorageKeys } from "@/lib/chat/chat-utils";
+import type { ModelSource } from "@/lib/chat/use-chat-preferences";
+import { useModelSelectorDisplay } from "@/lib/chat/use-model-selector-display.hook";
+import { useIsMobile } from "@/lib/hooks/use-mobile";
 import { useOrganization } from "@/lib/organization.query";
-import type { ModelSource } from "@/lib/use-chat-preferences";
-import { useIsMobile } from "@/lib/use-mobile.hook";
-import { useModelSelectorDisplay } from "@/lib/use-model-selector-display.hook";
 
 interface ArchestraPromptInputProps {
   onSubmit: (
@@ -66,7 +68,6 @@ interface ArchestraPromptInputProps {
   status: ChatStatus;
   selectedModel: string;
   onModelChange: (model: string) => void;
-  messageCount?: number;
   // Tools integration props
   agentId: string;
   /** Optional - if not provided, it's initial chat mode (no conversation yet) */
@@ -100,6 +101,8 @@ interface ArchestraPromptInputProps {
   isPlaywrightSetupVisible: boolean;
   /** Current agent ID for agent selector */
   selectorAgentId?: string | null;
+  /** Fallback display name when the selected agent is not yet present in the cached agent list */
+  selectorAgentName?: string;
   /** Callback when agent changes */
   onAgentChange?: (agentId: string) => void;
   /** Callback when model selector opens/closes */
@@ -116,7 +119,6 @@ const PromptInputContent = ({
   status,
   selectedModel,
   onModelChange,
-  messageCount,
   agentId,
   conversationId,
   currentConversationChatApiKeyId,
@@ -134,6 +136,7 @@ const PromptInputContent = ({
   submitDisabled = false,
   isPlaywrightSetupVisible = false,
   selectorAgentId,
+  selectorAgentName,
   onAgentChange,
   onModelSelectorOpenChange,
   modelSource,
@@ -251,12 +254,29 @@ const PromptInputContent = ({
     [onSubmit, storageKey],
   );
 
+  const handleFileError = useCallback(
+    (err: {
+      code: "max_files" | "max_file_size" | "accept";
+      message: string;
+    }) => {
+      if (err.code === "accept") {
+        toast.error(
+          !showFileUploadButton
+            ? "This model does not support file uploads"
+            : "File format is not supported by this model",
+        );
+      }
+    },
+    [showFileUploadButton],
+  );
+
   return (
     <PromptInput
       globalDrop
       multiple
       onSubmit={handleWrappedSubmit}
-      accept={acceptedFileTypes}
+      accept={showFileUploadButton ? acceptedFileTypes : "application/x-empty"}
+      onError={handleFileError}
     >
       {/* File attachments display - shown inline above textarea */}
       <PromptInputAttachments className="px-3 pt-2 pb-0">
@@ -332,23 +352,27 @@ const PromptInputContent = ({
                       <>
                         {modelSource && (
                           <div className="flex items-center gap-1.5">
-                            <p className="text-xs font-medium text-muted-foreground">
+                            <Badge
+                              variant="secondary"
+                              className="gap-1 bg-slate-200/70 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300 px-3 py-1 text-xs font-medium"
+                            >
                               {modelSource === "agent"
-                                ? "Agent default"
+                                ? "agent"
                                 : modelSource === "organization"
-                                  ? "Org default"
-                                  : "User override"}
-                            </p>
-                            {modelSource === "user" && onResetModelOverride && (
-                              <button
-                                type="button"
-                                onClick={onResetModelOverride}
-                                className="text-muted-foreground hover:text-foreground transition-colors"
-                                title="Reset to default"
-                              >
-                                <RotateCcwIcon className="size-3" />
-                              </button>
-                            )}
+                                  ? "org"
+                                  : "user override"}
+                              {modelSource === "user" &&
+                                onResetModelOverride && (
+                                  <button
+                                    type="button"
+                                    onClick={onResetModelOverride}
+                                    className="text-muted-foreground hover:text-foreground transition-colors"
+                                    title="Reset to default"
+                                  >
+                                    <XIcon className="size-3" />
+                                  </button>
+                                )}
+                            </Badge>
                           </div>
                         )}
                         {(conversationId || onApiKeyChange) && (
@@ -364,7 +388,6 @@ const PromptInputContent = ({
                                   ? (currentConversationChatApiKeyId ?? null)
                                   : (initialApiKeyId ?? null)
                               }
-                              messageCount={messageCount}
                               onApiKeyChange={onApiKeyChange}
                               onProviderChange={onProviderChange}
                               isModelsLoading={isModelsLoading}
@@ -471,6 +494,7 @@ const PromptInputContent = ({
                 onAgentChange && (
                   <InitialAgentSelector
                     currentAgentId={selectorAgentId}
+                    currentAgentName={selectorAgentName}
                     onAgentChange={onAgentChange}
                   />
                 )}
@@ -500,7 +524,6 @@ const PromptInputContent = ({
                           ? (currentConversationChatApiKeyId ?? null)
                           : (initialApiKeyId ?? null)
                       }
-                      messageCount={messageCount}
                       onApiKeyChange={onApiKeyChange}
                       onProviderChange={onProviderChange}
                       isModelsLoading={isModelsLoading}
@@ -532,8 +555,10 @@ const PromptInputContent = ({
                     }
                   />
                   {modelSource && (
-                    <span className="pr-2.5 pl-0.5 text-xs text-muted-foreground whitespace-nowrap inline-flex items-center gap-1">
-                      {"("}
+                    <Badge
+                      variant="secondary"
+                      className="ml-1 mr-2 gap-1 bg-slate-200/70 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300 px-3 py-1 text-xs font-medium"
+                    >
                       {modelSource === "agent"
                         ? "agent"
                         : modelSource === "organization"
@@ -543,14 +568,13 @@ const PromptInputContent = ({
                         <button
                           type="button"
                           onClick={onResetModelOverride}
-                          className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                          className="text-muted-foreground hover:text-foreground transition-colors"
                           title="Reset to default"
                         >
-                          <RotateCcwIcon className="size-3" />
+                          <XIcon className="size-3" />
                         </button>
                       )}
-                      {")"}
-                    </span>
+                    </Badge>
                   )}
                 </div>
               )}
@@ -589,7 +613,6 @@ const ArchestraPromptInput = ({
   status,
   selectedModel,
   onModelChange,
-  messageCount = 0,
   agentId,
   conversationId,
   currentConversationChatApiKeyId,
@@ -607,6 +630,7 @@ const ArchestraPromptInput = ({
   submitDisabled,
   isPlaywrightSetupVisible,
   selectorAgentId,
+  selectorAgentName,
   onAgentChange,
   onModelSelectorOpenChange,
   modelSource,
@@ -620,7 +644,6 @@ const ArchestraPromptInput = ({
           status={status}
           selectedModel={selectedModel}
           onModelChange={onModelChange}
-          messageCount={messageCount}
           agentId={agentId}
           conversationId={conversationId}
           currentConversationChatApiKeyId={currentConversationChatApiKeyId}
@@ -638,6 +661,7 @@ const ArchestraPromptInput = ({
           submitDisabled={submitDisabled}
           isPlaywrightSetupVisible={isPlaywrightSetupVisible}
           selectorAgentId={selectorAgentId}
+          selectorAgentName={selectorAgentName}
           onAgentChange={onAgentChange}
           onModelSelectorOpenChange={onModelSelectorOpenChange}
           modelSource={modelSource}

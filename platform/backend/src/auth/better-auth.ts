@@ -1,3 +1,4 @@
+import { apiKey } from "@better-auth/api-key";
 import type { HookEndpointContext } from "@better-auth/core";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { sso } from "@better-auth/sso";
@@ -17,13 +18,7 @@ import {
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
-import {
-  admin,
-  apiKey,
-  jwt,
-  organization,
-  twoFactor,
-} from "better-auth/plugins";
+import { admin, jwt, organization, twoFactor } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
@@ -50,12 +45,7 @@ const APP_NAME = DEFAULT_APP_NAME;
 const {
   api: { apiKeyAuthorizationHeaderName },
   frontendBaseUrl,
-  auth: {
-    secret,
-    cookieDomain,
-    trustedOrigins,
-    additionalTrustedSsoProviderIds,
-  },
+  auth: { secret, cookieDomain, trustedOrigins },
 } = config;
 
 const ac = createAccessControl(allAvailableActions);
@@ -64,8 +54,7 @@ const adminRole = ac.newRole(allAvailableActions);
 const editorRole = ac.newRole(editorPermissions);
 const memberRole = ac.newRole(memberPermissions);
 
-// biome-ignore lint/suspicious/noExplicitAny: better-auth bs https://github.com/better-auth/better-auth/issues/5666
-export const auth: any = betterAuth({
+export const auth = betterAuth({
   appName: APP_NAME,
   baseURL: frontendBaseUrl,
   secret,
@@ -247,16 +236,11 @@ export const auth: any = betterAuth({
     accountLinking: {
       enabled: true,
       /**
-       * Trust SSO providers for automatic account linking
-       * This allows existing users to sign in with SSO without manual linking
-       *
-       * Combines default trusted providers from @shared with additional ones
-       * configured via ARCHESTRA_AUTH_TRUSTED_SSO_PROVIDER_IDS env var
+       * Trust built-in SSO providers plus any identity providers configured by users.
+       * This allows existing users to sign in with built-in providers and custom
+       * generic OIDC/SAML providers without an env var override.
        */
-      trustedProviders: [
-        ...SSO_TRUSTED_PROVIDER_IDS,
-        ...additionalTrustedSsoProviderIds,
-      ],
+      trustedProviders: getTrustedAccountLinkingProviderIds,
       /**
        * Don't allow linking accounts with different emails. From the better-auth typescript
        * annotations they mention for this attribute:
@@ -410,6 +394,19 @@ function getBetterAuthLogLevel(
 }
 
 export type BetterAuth = typeof auth;
+
+async function getTrustedAccountLinkingProviderIds(): Promise<string[]> {
+  if (!config.enterpriseFeatures.core) {
+    return [...SSO_TRUSTED_PROVIDER_IDS];
+  }
+
+  const { default: IdentityProviderModel } = await import(
+    // biome-ignore lint/style/noRestrictedImports: runtime-gated EE model import
+    "@/models/identity-provider.ee"
+  );
+
+  return IdentityProviderModel.getTrustedAccountLinkingProviderIds();
+}
 
 /**
  * Validates requests before they are processed by better-auth.

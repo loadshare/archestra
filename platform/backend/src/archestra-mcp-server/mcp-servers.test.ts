@@ -3,52 +3,10 @@ import {
   ARCHESTRA_MCP_SERVER_NAME,
   MCP_SERVER_TOOL_NAME_SEPARATOR,
 } from "@shared";
+import { InternalMcpCatalogModel } from "@/models";
 import { beforeEach, describe, expect, test } from "@/test";
 import type { Agent } from "@/types";
 import { type ArchestraContext, executeArchestraTool } from ".";
-import { tools } from "./mcp-servers";
-
-describe("mcp server tools", () => {
-  test("should have search_private_mcp_registry tool", () => {
-    const tool = tools.find((t) =>
-      t.name.endsWith("search_private_mcp_registry"),
-    );
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Search Private MCP Registry");
-  });
-
-  test("should have get_mcp_servers tool", () => {
-    const tool = tools.find((t) => t.name.endsWith("get_mcp_servers"));
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Get MCP Servers");
-  });
-
-  test("should have get_mcp_server_tools tool", () => {
-    const tool = tools.find((t) => t.name.endsWith("get_mcp_server_tools"));
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Get MCP Server Tools");
-  });
-
-  test("should have edit_mcp_description tool", () => {
-    const tool = tools.find((t) => t.name.endsWith("edit_mcp_description"));
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Edit MCP Server Description");
-  });
-
-  test("should have edit_mcp_config tool", () => {
-    const tool = tools.find((t) => t.name.endsWith("edit_mcp_config"));
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Edit MCP Server Configuration");
-  });
-
-  test("should have create_mcp_server_installation_request tool", () => {
-    const tool = tools.find((t) =>
-      t.name.endsWith("create_mcp_server_installation_request"),
-    );
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Create MCP Server Installation Request");
-  });
-});
 
 describe("mcp server tool execution", () => {
   let testAgent: Agent;
@@ -74,8 +32,9 @@ describe("mcp server tool execution", () => {
     );
     expect(result.isError).toBe(true);
     expect((result.content[0] as any).text).toContain(
-      "mcpServerId parameter is required",
+      "Validation error in archestra__get_mcp_server_tools",
     );
+    expect((result.content[0] as any).text).toContain("mcpServerId:");
   });
 
   test("get_mcp_servers returns catalog items", async () => {
@@ -85,6 +44,7 @@ describe("mcp server tool execution", () => {
       mockContext,
     );
     expect(result.isError).toBe(false);
+    expect(result.structuredContent).toEqual({ items: expect.any(Array) });
     const parsed = JSON.parse((result.content[0] as any).text);
     expect(Array.isArray(parsed)).toBe(true);
   });
@@ -107,8 +67,9 @@ describe("mcp server tool execution", () => {
     );
     expect(result.isError).toBe(true);
     expect((result.content[0] as any).text).toContain(
-      "MCP server catalog id is required",
+      "Validation error in archestra__edit_mcp_description",
     );
+    expect((result.content[0] as any).text).toContain("id:");
   });
 
   test("edit_mcp_description returns error when user/org context is missing", async () => {
@@ -117,7 +78,7 @@ describe("mcp server tool execution", () => {
     };
     const result = await executeArchestraTool(
       `${ARCHESTRA_MCP_SERVER_NAME}${MCP_SERVER_TOOL_NAME_SEPARATOR}edit_mcp_description`,
-      { id: "some-id" },
+      { id: "00000000-0000-4000-8000-000000000001" },
       noAuthContext,
     );
     expect(result.isError).toBe(true);
@@ -152,6 +113,11 @@ describe("mcp server tool execution", () => {
       mockContext,
     );
     expect(result.isError).toBe(false);
+    expect(result.structuredContent).toEqual({
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: catalog.id, name: "Test MCP Server" }),
+      ]),
+    });
     const parsed = JSON.parse((result.content[0] as any).text);
     const found = parsed.find((item: any) => item.id === catalog.id);
     expect(found).toBeDefined();
@@ -223,5 +189,67 @@ describe("mcp server tool execution", () => {
     expect(text).toContain("Successfully updated MCP server");
     expect(text).toContain("Updated Name");
     expect(text).toContain("Updated description");
+
+    const updatedCatalog = await InternalMcpCatalogModel.findById(catalog.id, {
+      expandSecrets: false,
+    });
+    expect(updatedCatalog?.name).toBe("Updated Name");
+    expect(updatedCatalog?.description).toBe("Updated description");
+  });
+
+  test("create_mcp_server persists a new MCP catalog item", async () => {
+    const result = await executeArchestraTool(
+      `${ARCHESTRA_MCP_SERVER_NAME}${MCP_SERVER_TOOL_NAME_SEPARATOR}create_mcp_server`,
+      {
+        name: "Created Via Tool",
+        description: "Created from the Archestra MCP tool handler",
+        serverType: "remote",
+        serverUrl: "https://example.com/mcp",
+      },
+      mockContext,
+    );
+
+    expect(result.isError).toBe(false);
+
+    const createdCatalog =
+      await InternalMcpCatalogModel.findByName("Created Via Tool");
+    expect(createdCatalog).toBeTruthy();
+    expect(createdCatalog?.description).toBe(
+      "Created from the Archestra MCP tool handler",
+    );
+    expect(createdCatalog?.serverType).toBe("remote");
+    expect(createdCatalog?.serverUrl).toBe("https://example.com/mcp");
+  });
+
+  test("edit_mcp_config updates persisted MCP server configuration", async ({
+    makeInternalMcpCatalog,
+  }) => {
+    const catalog = await makeInternalMcpCatalog({
+      name: "Configurable MCP Server",
+      serverType: "local",
+    });
+
+    const result = await executeArchestraTool(
+      `${ARCHESTRA_MCP_SERVER_NAME}${MCP_SERVER_TOOL_NAME_SEPARATOR}edit_mcp_config`,
+      {
+        id: catalog.id,
+        command: "npx",
+        arguments: ["-y", "@modelcontextprotocol/server-github"],
+        transportType: "stdio",
+      },
+      mockContext,
+    );
+
+    expect(result.isError).toBe(false);
+
+    const updatedCatalog = await InternalMcpCatalogModel.findById(catalog.id, {
+      expandSecrets: false,
+    });
+    expect(updatedCatalog?.localConfig?.command).toBe("npx");
+    expect(updatedCatalog?.localConfig?.arguments).toEqual([
+      "-y",
+      "@modelcontextprotocol/server-github",
+    ]);
+    expect(updatedCatalog?.localConfig?.transportType).toBe("stdio");
   });
 });

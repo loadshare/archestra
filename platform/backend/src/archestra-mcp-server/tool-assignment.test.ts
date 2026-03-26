@@ -8,50 +8,9 @@ import db, { schema } from "@/database";
 import { beforeEach, describe, expect, test } from "@/test";
 import type { Agent } from "@/types";
 import { type ArchestraContext, executeArchestraTool } from ".";
-import { tools } from "./tool-assignment";
 
 const AGENTS_TOOL = `${ARCHESTRA_MCP_SERVER_NAME}${MCP_SERVER_TOOL_NAME_SEPARATOR}bulk_assign_tools_to_agents`;
 const GATEWAYS_TOOL = `${ARCHESTRA_MCP_SERVER_NAME}${MCP_SERVER_TOOL_NAME_SEPARATOR}bulk_assign_tools_to_mcp_gateways`;
-
-describe("tool assignment tools", () => {
-  test("should have bulk_assign_tools_to_agents tool", () => {
-    const tool = tools.find((t) =>
-      t.name.endsWith("bulk_assign_tools_to_agents"),
-    );
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Bulk Assign Tools to Agents");
-    expect(tool?.inputSchema.required).toContain("assignments");
-  });
-
-  test("should have bulk_assign_tools_to_mcp_gateways tool", () => {
-    const tool = tools.find((t) =>
-      t.name.endsWith("bulk_assign_tools_to_mcp_gateways"),
-    );
-    expect(tool).toBeDefined();
-    expect(tool?.title).toBe("Bulk Assign Tools to MCP Gateways");
-    expect(tool?.inputSchema.required).toContain("assignments");
-  });
-
-  test("bulk_assign_tools_to_agents schema includes useDynamicTeamCredential", () => {
-    const tool = tools.find((t) =>
-      t.name.endsWith("bulk_assign_tools_to_agents"),
-    );
-    const itemProps = (tool?.inputSchema as any).properties.assignments.items
-      .properties;
-    expect(itemProps.useDynamicTeamCredential).toBeDefined();
-    expect(itemProps.useDynamicTeamCredential.type).toBe("boolean");
-  });
-
-  test("bulk_assign_tools_to_mcp_gateways schema includes useDynamicTeamCredential", () => {
-    const tool = tools.find((t) =>
-      t.name.endsWith("bulk_assign_tools_to_mcp_gateways"),
-    );
-    const itemProps = (tool?.inputSchema as any).properties.assignments.items
-      .properties;
-    expect(itemProps.useDynamicTeamCredential).toBeDefined();
-    expect(itemProps.useDynamicTeamCredential.type).toBe("boolean");
-  });
-});
 
 describe("tool assignment tool execution", () => {
   let testAgent: Agent;
@@ -72,9 +31,7 @@ describe("tool assignment tool execution", () => {
   test("bulk_assign_tools_to_agents returns error when assignments is missing", async () => {
     const result = await executeArchestraTool(AGENTS_TOOL, {}, mockContext);
     expect(result.isError).toBe(true);
-    expect((result.content[0] as any).text).toContain(
-      "assignments parameter is required",
-    );
+    expect((result.content[0] as any).text).toContain("Validation error");
   });
 
   test("bulk_assign_tools_to_agents returns error when assignments is not an array", async () => {
@@ -84,17 +41,13 @@ describe("tool assignment tool execution", () => {
       mockContext,
     );
     expect(result.isError).toBe(true);
-    expect((result.content[0] as any).text).toContain(
-      "assignments parameter is required",
-    );
+    expect((result.content[0] as any).text).toContain("Validation error");
   });
 
   test("bulk_assign_tools_to_mcp_gateways returns error when assignments is missing", async () => {
     const result = await executeArchestraTool(GATEWAYS_TOOL, {}, mockContext);
     expect(result.isError).toBe(true);
-    expect((result.content[0] as any).text).toContain(
-      "assignments parameter is required",
-    );
+    expect((result.content[0] as any).text).toContain("Validation error");
   });
 
   test("bulk_assign_tools_to_agents handles empty assignments array", async () => {
@@ -104,6 +57,11 @@ describe("tool assignment tool execution", () => {
       mockContext,
     );
     expect(result.isError).toBe(false);
+    expect(result.structuredContent).toEqual({
+      succeeded: [],
+      failed: [],
+      duplicates: [],
+    });
     const parsed = JSON.parse((result.content[0] as any).text);
     expect(parsed.succeeded).toEqual([]);
     expect(parsed.failed).toEqual([]);
@@ -134,6 +92,17 @@ describe("tool assignment tool execution", () => {
     const parsed = JSON.parse((result.content[0] as any).text);
     expect(parsed.succeeded.length).toBe(3);
     expect(parsed.failed.length).toBe(0);
+
+    const persistedAssignments = await db
+      .select()
+      .from(schema.agentToolsTable)
+      .where(
+        and(
+          eq(schema.agentToolsTable.toolId, tool1.id),
+          eq(schema.agentToolsTable.agentId, agent1.id),
+        ),
+      );
+    expect(persistedAssignments).toHaveLength(1);
   });
 
   test("bulk_assign_tools_to_agents detects duplicates on second assignment", async ({
@@ -161,9 +130,87 @@ describe("tool assignment tool execution", () => {
     expect(parsed.duplicates.length).toBe(1);
     expect(parsed.succeeded.length).toBe(0);
   });
+
+  test("bulk_assign_tools_to_agents enforces target agent modify permission", async ({
+    makeAgent,
+    makeMember,
+    makeOrganization,
+    makeTool,
+    makeUser,
+  }) => {
+    const org = await makeOrganization();
+    const owner = await makeUser();
+    const member = await makeUser();
+    await makeMember(owner.id, org.id, { role: "admin" });
+    await makeMember(member.id, org.id, { role: "member" });
+
+    const protectedAgent = await makeAgent({
+      name: "Protected Personal Agent",
+      organizationId: org.id,
+      authorId: owner.id,
+      scope: "personal",
+    });
+    const tool = await makeTool({ name: "protected_assign_tool" });
+
+    const memberContext: ArchestraContext = {
+      agent: { id: protectedAgent.id, name: protectedAgent.name },
+      userId: member.id,
+      organizationId: org.id,
+    };
+
+    const result = await executeArchestraTool(
+      AGENTS_TOOL,
+      {
+        assignments: [{ agentId: protectedAgent.id, toolId: tool.id }],
+      },
+      memberContext,
+    );
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse((result.content[0] as any).text);
+    expect(parsed.failed).toEqual([
+      {
+        agentId: protectedAgent.id,
+        toolId: tool.id,
+        error: "You can only manage your own personal agents",
+      },
+    ]);
+    expect(parsed.succeeded).toEqual([]);
+  });
+
+  test("bulk_assign_tools_to_agents preserves structured validation error metadata", async ({
+    makeAgent,
+  }) => {
+    const agent = await makeAgent({ name: "Missing Tool Agent" });
+
+    const result = await executeArchestraTool(
+      AGENTS_TOOL,
+      {
+        assignments: [
+          {
+            agentId: agent.id,
+            toolId: "00000000-0000-4000-8000-000000000099",
+          },
+        ],
+      },
+      mockContext,
+    );
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse((result.content[0] as any).text);
+    expect(parsed.failed).toEqual([
+      {
+        agentId: agent.id,
+        toolId: "00000000-0000-4000-8000-000000000099",
+        error: "Tool with ID 00000000-0000-4000-8000-000000000099 not found",
+        errorCode: "not_found",
+        errorType: "not_found",
+      },
+    ]);
+  });
 });
 
-describe("tool assignment with useDynamicTeamCredential", () => {
+describe("tool assignment with late-bound resolution", () => {
   let testAgent: Agent;
   let mockContext: ArchestraContext;
 
@@ -182,7 +229,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
     };
   });
 
-  test("assigns remote tool with useDynamicTeamCredential=true", async ({
+  test("assigns remote tool with resolveAtCallTime=true", async ({
     makeAgent,
     makeInternalMcpCatalog,
     makeTool,
@@ -201,7 +248,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
           {
             agentId: agent.id,
             toolId: tool.id,
-            useDynamicTeamCredential: true,
+            resolveAtCallTime: true,
           },
         ],
       },
@@ -226,7 +273,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
     expect(agentTool.credentialSourceMcpServerId).toBeNull();
   });
 
-  test("assigns local tool with useDynamicTeamCredential=true", async ({
+  test("assigns local tool with resolveAtCallTime=true", async ({
     makeAgent,
     makeInternalMcpCatalog,
     makeTool,
@@ -245,7 +292,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
           {
             agentId: agent.id,
             toolId: tool.id,
-            useDynamicTeamCredential: true,
+            resolveAtCallTime: true,
           },
         ],
       },
@@ -270,7 +317,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
     expect(agentTool.executionSourceMcpServerId).toBeNull();
   });
 
-  test("remote tool without credential source or useDynamicTeamCredential fails", async ({
+  test("remote tool without credential source or late-bound resolution fails", async ({
     makeAgent,
     makeInternalMcpCatalog,
     makeTool,
@@ -297,7 +344,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
     );
   });
 
-  test("local tool without execution source or useDynamicTeamCredential fails", async ({
+  test("local tool without execution source or late-bound resolution fails", async ({
     makeAgent,
     makeInternalMcpCatalog,
     makeTool,
@@ -324,7 +371,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
     );
   });
 
-  test("assigns to MCP gateway with useDynamicTeamCredential=true", async ({
+  test("assigns to MCP gateway with resolveAtCallTime=true", async ({
     makeAgent,
     makeInternalMcpCatalog,
     makeTool,
@@ -344,7 +391,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
           {
             mcpGatewayId: gateway.id,
             toolId: tool.id,
-            useDynamicTeamCredential: true,
+            resolveAtCallTime: true,
           },
         ],
       },
@@ -368,7 +415,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
     expect(agentTool.useDynamicTeamCredential).toBe(true);
   });
 
-  test("reassigning with useDynamicTeamCredential updates existing assignment", async ({
+  test("reassigning with resolveAtCallTime updates existing assignment", async ({
     makeAgent,
     makeTool,
   }) => {
@@ -400,7 +447,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
       );
     expect(initial.useDynamicTeamCredential).toBe(false);
 
-    // Reassign with useDynamicTeamCredential
+    // Reassign with late-bound resolution
     const result = await executeArchestraTool(
       AGENTS_TOOL,
       {
@@ -408,7 +455,7 @@ describe("tool assignment with useDynamicTeamCredential", () => {
           {
             agentId: agent.id,
             toolId: tool.id,
-            useDynamicTeamCredential: true,
+            resolveAtCallTime: true,
           },
         ],
       },

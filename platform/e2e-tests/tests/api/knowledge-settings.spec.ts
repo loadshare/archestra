@@ -232,7 +232,7 @@ test.describe("Knowledge Settings API", () => {
 
     const errorBody = await response.json();
     expect(errorBody.error.message).toContain(
-      "Embedding API key must be an OpenAI provider key",
+      "Embedding API key must use a compatible provider (OpenAI or Ollama)",
     );
 
     // Cleanup
