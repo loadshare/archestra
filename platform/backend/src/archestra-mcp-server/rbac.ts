@@ -140,8 +140,14 @@ export async function checkToolPermission(
   const perm = TOOL_PERMISSIONS[shortName as ArchestraToolShortName];
   if (!perm) return null;
 
-  if (!context.userId || !context.organizationId) {
+  if (!context.organizationId) {
     return errorResult("User context not available");
+  }
+
+  // Org/team tokens have organizationId but no userId — they are pre-authorized
+  // at the org level, so skip per-user permission checks.
+  if (!context.userId) {
+    return null;
   }
 
   const allowed = await userHasPermission(

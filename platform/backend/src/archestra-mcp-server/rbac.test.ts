@@ -127,19 +127,18 @@ describe("checkToolPermission", () => {
     );
   });
 
-  test("returns error when userId is missing", async () => {
-    const noUserCtx: ArchestraContext = {
+  test("allows org/team token with organizationId but no userId", async () => {
+    // Org/team tokens have organizationId but no userId — they are pre-authorized
+    // at the org level, so permission checks should be skipped (return null = allowed).
+    const orgTokenCtx: ArchestraContext = {
       agent: { id: "a", name: "a" },
       organizationId: "org",
     };
     const result = await checkToolPermission(
       t("create_knowledge_base"),
-      noUserCtx,
+      orgTokenCtx,
     );
-    expect(result).not.toBeNull();
-    expect((result?.content[0] as any).text).toContain(
-      "User context not available",
-    );
+    expect(result).toBeNull();
   });
 
   test("returns null for non-Archestra tool names", async () => {

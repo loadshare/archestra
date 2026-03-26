@@ -815,20 +815,19 @@ describe("knowledge-management tool execution", () => {
       });
     }
 
-    test("mutation without userId returns error", async () => {
-      const noUserContext: ArchestraContext = {
+    test("org/team token without userId is allowed (pre-authorized at org level)", async () => {
+      // Org/team tokens have organizationId but no userId — they skip per-user
+      // RBAC checks and are treated as pre-authorized at the org level.
+      const orgTokenContext: ArchestraContext = {
         agent: { id: testAgent.id, name: testAgent.name },
         organizationId: memberContext.organizationId,
       };
       const result = await executeArchestraTool(
         t("create_knowledge_base"),
-        { name: "Test KB" },
-        noUserContext,
+        { name: "Test KB Org Token" },
+        orgTokenContext,
       );
-      expect(result.isError).toBe(true);
-      expect((result.content[0] as any).text).toContain(
-        "User context not available",
-      );
+      expect(result.isError).toBeFalsy();
     });
   });
 });
