@@ -25780,7 +25780,7 @@ export type GetKnowledgeBasesResponses = {
             connectors: Array<{
                 id: string;
                 name: string;
-                connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow';
+                connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion';
             }>;
             totalDocsIndexed: number;
             assignedAgents: Array<{
@@ -26238,7 +26238,7 @@ export type GetConnectorsData = {
         offset?: number;
         knowledgeBaseId?: string;
         search?: string;
-        connectorType?: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow';
+        connectorType?: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion';
     };
     url: '/api/connectors';
 };
@@ -26312,7 +26312,7 @@ export type GetConnectorsResponses = {
             organizationId: string;
             name: string;
             description: string | null;
-            connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow';
+            connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion';
             config: {
                 type: 'jira';
                 jiraBaseUrl: unknown;
@@ -26360,6 +26360,11 @@ export type GetConnectorsResponses = {
                 assignmentGroups?: Array<string>;
                 batchSize?: number;
                 syncDataForLastMonths?: number;
+            } | {
+                type: 'notion';
+                databaseIds?: Array<string>;
+                pageIds?: Array<string>;
+                batchSize?: number;
             };
             secretId: string | null;
             schedule: string;
@@ -26395,7 +26400,7 @@ export type CreateConnectorData = {
     body: {
         name: string;
         description?: string | null;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion';
         config: {
             type: 'jira';
             jiraBaseUrl: string;
@@ -26443,6 +26448,11 @@ export type CreateConnectorData = {
             assignmentGroups?: Array<string>;
             batchSize?: number;
             syncDataForLastMonths?: number;
+        } | {
+            type: 'notion';
+            databaseIds?: Array<string>;
+            pageIds?: Array<string>;
+            batchSize?: number;
         };
         credentials: {
             email?: string;
@@ -26525,7 +26535,7 @@ export type CreateConnectorResponses = {
         organizationId: string;
         name: string;
         description: string | null;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion';
         config: {
             type: 'jira';
             jiraBaseUrl: unknown;
@@ -26573,6 +26583,11 @@ export type CreateConnectorResponses = {
             assignmentGroups?: Array<string>;
             batchSize?: number;
             syncDataForLastMonths?: number;
+        } | {
+            type: 'notion';
+            databaseIds?: Array<string>;
+            pageIds?: Array<string>;
+            batchSize?: number;
         };
         secretId: string | null;
         schedule: string;
@@ -26746,7 +26761,7 @@ export type GetConnectorResponses = {
         organizationId: string;
         name: string;
         description: string | null;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion';
         config: {
             type: 'jira';
             jiraBaseUrl: unknown;
@@ -26794,6 +26809,11 @@ export type GetConnectorResponses = {
             assignmentGroups?: Array<string>;
             batchSize?: number;
             syncDataForLastMonths?: number;
+        } | {
+            type: 'notion';
+            databaseIds?: Array<string>;
+            pageIds?: Array<string>;
+            batchSize?: number;
         };
         secretId: string | null;
         schedule: string;
@@ -26863,6 +26883,11 @@ export type UpdateConnectorData = {
             assignmentGroups?: Array<string>;
             batchSize?: number;
             syncDataForLastMonths?: number;
+        } | {
+            type: 'notion';
+            databaseIds?: Array<string>;
+            pageIds?: Array<string>;
+            batchSize?: number;
         };
         credentials?: {
             email?: string;
@@ -26946,7 +26971,7 @@ export type UpdateConnectorResponses = {
         organizationId: string;
         name: string;
         description: string | null;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion';
         config: {
             type: 'jira';
             jiraBaseUrl: unknown;
@@ -26994,6 +27019,11 @@ export type UpdateConnectorResponses = {
             assignmentGroups?: Array<string>;
             batchSize?: number;
             syncDataForLastMonths?: number;
+        } | {
+            type: 'notion';
+            databaseIds?: Array<string>;
+            pageIds?: Array<string>;
+            batchSize?: number;
         };
         secretId: string | null;
         schedule: string;
