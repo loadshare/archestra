@@ -17,9 +17,10 @@ export const EMBEDDING_DIMENSIONS = 1536;
 
 /**
  * Providers whose API keys can be used for embedding.
- * These providers expose an OpenAI-compatible `/v1/embeddings` endpoint.
+ * - openai / ollama: use the OpenAI-compatible `/v1/embeddings` endpoint
+ * - gemini: uses Google's native `batchEmbedContents` API
  */
-export const EMBEDDING_COMPATIBLE_PROVIDERS = new Set(["openai", "ollama"]);
+export const EMBEDDING_COMPATIBLE_PROVIDERS = new Set(["openai", "ollama", "gemini"]);
 
 /**
  * Supported embedding column sizes. Each entry maps to a dedicated
@@ -64,6 +65,11 @@ export const EMBEDDING_MODELS: Record<string, EmbeddingModelMeta> = {
   "nomic-embed-text": {
     label: "nomic-embed-text",
     description: "Open-source model, 768 dims (Ollama compatible)",
+    dimensions: 768,
+  },
+  "text-embedding-004": {
+    label: "text-embedding-004",
+    description: "Google Gemini embedding model, 768 dims",
     dimensions: 768,
   },
 };

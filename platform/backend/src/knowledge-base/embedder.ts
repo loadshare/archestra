@@ -1,8 +1,13 @@
-import type { EmbeddingModel } from "@shared";
+import type { EmbeddingModel, SupportedProvider } from "@shared";
 import { addNomicTaskPrefix, EMBEDDING_BATCH_SIZE } from "@shared";
 import OpenAI from "openai";
 import logger from "@/logging";
 import { KbChunkModel, KbDocumentModel } from "@/models";
+import {
+  callGeminiBatchEmbed,
+  type EmbeddingApiResponse,
+  GeminiApiError,
+} from "./gemini-embedding-client";
 import {
   buildEmbeddingInteraction,
   withKbObservability,
@@ -13,9 +18,12 @@ const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000;
 
 interface EmbeddingContext {
-  client: OpenAI;
+  client: OpenAI | null;
+  geminiApiKey?: string;
+  geminiBaseUrl?: string | null;
   model: EmbeddingModel;
   dimensions: number;
+  provider: SupportedProvider;
 }
 
 class EmbeddingService {
@@ -247,23 +255,36 @@ class EmbeddingService {
   private async callEmbeddingApiWithRetry(
     ctx: EmbeddingContext,
     texts: string[],
-  ): Promise<OpenAI.Embeddings.CreateEmbeddingResponse> {
+  ): Promise<EmbeddingApiResponse> {
+    const isGemini = ctx.provider === "gemini";
+    const provider = isGemini ? "gemini" : "openai";
+    const type = isGemini ? "gemini:embeddings" : "openai:embeddings";
+
     for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
       try {
         const response = await withKbObservability({
           operationName: "embedding",
-          provider: "openai",
+          provider,
           model: ctx.model,
           source: "knowledge:embedding",
-          type: "openai:embeddings",
-          callback: () =>
-            ctx.client.embeddings.create({
+          type,
+          callback: () => {
+            if (isGemini) {
+              return callGeminiBatchEmbed({
+                texts,
+                model: ctx.model,
+                apiKey: ctx.geminiApiKey ?? "",
+                baseUrl: ctx.geminiBaseUrl,
+              });
+            }
+            return ctx.client!.embeddings.create({
               model: ctx.model,
               input: texts,
               ...(ctx.model.startsWith("nomic")
                 ? {}
                 : { dimensions: ctx.dimensions }),
-            }),
+            });
+          },
           buildInteraction: (resp) =>
             buildEmbeddingInteraction({
               model: ctx.model,
@@ -300,6 +321,9 @@ class EmbeddingService {
   private isRetryableError(error: unknown): boolean {
     if (error instanceof OpenAI.APIError) {
       return error.status === 429 || (error.status ?? 0) >= 500;
+    }
+    if (error instanceof GeminiApiError) {
+      return error.status === 429 || error.status >= 500;
     }
     // Network-level errors (ECONNRESET, ETIMEDOUT, etc.)
     if (error instanceof Error && "code" in error) {
