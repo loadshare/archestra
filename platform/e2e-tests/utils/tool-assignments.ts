@@ -8,7 +8,6 @@ import {
   getAssignmentComboboxSearchInputTestId,
 } from "@shared";
 import { goToPage } from "../fixtures";
-import { clickButton } from "./dialogs";
 
 type AssignmentTarget = {
   page: Page;
@@ -17,20 +16,6 @@ type AssignmentTarget = {
   pagePath: "/agents" | "/mcp/gateways";
   dialogTitle: "Edit Agent" | "Edit MCP Gateway";
 };
-
-export async function openAgentCatalogToolAssignment(params: {
-  page: Page;
-  agentName: string;
-  catalogItemName: string;
-}) {
-  return await openCatalogToolAssignment({
-    page: params.page,
-    targetName: params.agentName,
-    catalogItemName: params.catalogItemName,
-    pagePath: "/agents",
-    dialogTitle: "Edit Agent",
-  });
-}
 
 export async function openGatewayCatalogToolAssignment(params: {
   page: Page;
