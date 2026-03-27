@@ -23,8 +23,51 @@ export class GeminiApiError extends Error {
 }
 
 /**
- * Call Google's `batchEmbedContents` endpoint and return an OpenAI-compatible
- * embedding response.
+ * Embed a single text using Google's `embedContent` endpoint.
+ * Returns the embedding values array.
+ */
+async function embedOne(params: {
+  text: string;
+  modelId: string;
+  apiKey: string;
+  base: string;
+  dimensions?: number;
+}): Promise<number[]> {
+  const { text, modelId, apiKey, base, dimensions } = params;
+  const url = `${base}/${GEMINI_API_VERSION}/${modelId}:embedContent`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      model: modelId,
+      content: { parts: [{ text }] },
+      ...(dimensions ? { outputDimensionality: dimensions } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+
+    throw new GeminiApiError(
+      response.status,
+      `Gemini embedding API error ${response.status}: ${errorText.slice(0, 200)}`,
+    );
+  }
+
+  const result = (await response.json()) as {
+    embedding?: { values: number[] };
+  };
+
+  return result.embedding?.values ?? [];
+}
+
+/**
+ * Embed multiple texts using Google's `embedContent` endpoint (called per text)
+ * and return an OpenAI-compatible embedding response.
  *
  * Gemini's native embedding API does not report token usage, so `prompt_tokens`
  * and `total_tokens` are always 0.
@@ -34,46 +77,36 @@ export async function callGeminiBatchEmbed(params: {
   model: string;
   apiKey: string;
   baseUrl?: string | null;
+  dimensions?: number;
 }): Promise<EmbeddingApiResponse> {
-  const { texts, model, apiKey, baseUrl } = params;
-  const base = baseUrl ?? GEMINI_DEFAULT_BASE;
+  const { texts, model, apiKey, baseUrl, dimensions } = params;
 
-  // Normalise to "models/text-embedding-004" format
+  // Always use the canonical Gemini API host for embeddings.
+  // The configured baseUrl may point to the OpenAI-compatible layer
+  // (e.g. /v1beta/openai) which does not expose embedContent.
+  // Strip any path from the configured URL and fall back to the default.
+  const base = (() => {
+    const raw = baseUrl ?? GEMINI_DEFAULT_BASE;
+    try {
+      const { protocol, host } = new URL(raw);
+      return `${protocol}//${host}`;
+    } catch {
+      return GEMINI_DEFAULT_BASE;
+    }
+  })();
+
+  // Normalise to "models/gemini-embedding-001" format
   const modelId = model.startsWith("models/") ? model : `models/${model}`;
-  const url = `${base}/${GEMINI_API_VERSION}/${modelId}:batchEmbedContents?key=${apiKey}`;
 
-  const body = {
-    requests: texts.map((text) => ({
-      model: modelId,
-      content: { parts: [{ text }] },
-    })),
-  };
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new GeminiApiError(
-      response.status,
-      `Gemini embedding API error ${response.status}: ${errorText.slice(0, 200)}`,
-    );
-  }
-
-  const result = (await response.json()) as {
-    embeddings?: Array<{ values: number[] }>;
-  };
-
-  const embeddings = result.embeddings ?? [];
+  const embeddings = await Promise.all(
+    texts.map((text) => embedOne({ text, modelId, apiKey, base, dimensions })),
+  );
 
   return {
     object: "list",
-    data: embeddings.map((e, index) => ({
+    data: embeddings.map((embedding, index) => ({
       object: "embedding",
-      embedding: e.values,
+      embedding,
       index,
     })),
     model,

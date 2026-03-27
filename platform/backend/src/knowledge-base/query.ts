@@ -9,7 +9,8 @@ import {
   buildEmbeddingInteraction,
   withKbObservability,
 } from "./kb-interaction";
-import { resolveEmbeddingConfig } from "./kb-llm-client";
+import { callGeminiBatchEmbed } from "./gemini-embedding-client";
+import { resolveEmbeddingConfig, type EmbeddingConfig } from "./kb-llm-client";
 import {
   expandQuery,
   KEYWORD_QUERY_HYBRID_ALPHA_WEIGHT,
@@ -30,12 +31,6 @@ interface ChunkResult {
   };
 }
 
-interface EmbeddingConfig {
-  // biome-ignore lint/suspicious/noExplicitAny: OpenAI client type
-  client: any;
-  model: string;
-  dimensions: number;
-}
 
 class QueryService {
   async query(params: {
@@ -142,14 +137,24 @@ class QueryService {
       "[QueryService] Searching expanded query",
     );
 
+    const isGemini = embeddingConfig.provider === "gemini";
     const embeddingResponse = await withKbObservability({
       operationName: "embedding",
-      provider: "openai",
+      provider: isGemini ? "gemini" : "openai",
       model: embeddingConfig.model,
       source: "knowledge:embedding",
-      type: "openai:embeddings",
-      callback: () =>
-        embeddingConfig.client.embeddings.create({
+      type: isGemini ? "gemini:embeddings" : "openai:embeddings",
+      callback: () => {
+        if (isGemini) {
+          return callGeminiBatchEmbed({
+            texts: [queryText],
+            model: embeddingConfig.model,
+            apiKey: embeddingConfig.geminiApiKey ?? "",
+            baseUrl: embeddingConfig.geminiBaseUrl,
+            dimensions: embeddingConfig.dimensions,
+          });
+        }
+        return embeddingConfig.client!.embeddings.create({
           model: embeddingConfig.model,
           input: addNomicTaskPrefix(
             embeddingConfig.model,
@@ -159,7 +164,8 @@ class QueryService {
           ...(embeddingConfig.model.startsWith("nomic")
             ? {}
             : { dimensions: embeddingConfig.dimensions }),
-        }),
+        });
+      },
       buildInteraction: (
         response: Parameters<typeof buildEmbeddingInteraction>[0]["response"],
       ) =>

@@ -275,6 +275,7 @@ class EmbeddingService {
                 model: ctx.model,
                 apiKey: ctx.geminiApiKey ?? "",
                 baseUrl: ctx.geminiBaseUrl,
+                dimensions: ctx.dimensions,
               });
             }
             return ctx.client!.embeddings.create({
