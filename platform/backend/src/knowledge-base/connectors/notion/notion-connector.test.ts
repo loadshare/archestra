@@ -111,7 +111,7 @@ describe("NotionConnector", () => {
     it("returns failure on non-OK response", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       ).mockResolvedValueOnce({
         ok: false,
@@ -131,7 +131,7 @@ describe("NotionConnector", () => {
     it("returns success on OK response", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       ).mockResolvedValueOnce({
         ok: true,
@@ -149,7 +149,7 @@ describe("NotionConnector", () => {
     it("returns failure when fetch throws", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       ).mockRejectedValueOnce(new Error("Network error"));
 
@@ -167,7 +167,7 @@ describe("NotionConnector", () => {
     it("yields a batch of documents from search results", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -203,7 +203,7 @@ describe("NotionConnector", () => {
     it("paginates through multiple search pages using cursor", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -242,7 +242,7 @@ describe("NotionConnector", () => {
     it("skips non-page objects in search results", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -280,7 +280,7 @@ describe("NotionConnector", () => {
     it("continues sync when page content fetch fails", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -320,7 +320,7 @@ describe("NotionConnector", () => {
     it("throws when search endpoint returns error", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       ).mockResolvedValueOnce({
         ok: false,
@@ -340,7 +340,7 @@ describe("NotionConnector", () => {
     it("sets checkpoint lastSyncedAt from last result last_edited_time", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -374,7 +374,7 @@ describe("NotionConnector", () => {
     it("preserves previous checkpoint when batch is empty", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       ).mockResolvedValueOnce(makeSearchResponse([]));
 
@@ -397,7 +397,7 @@ describe("NotionConnector", () => {
     it("builds correct sourceUrl from page url", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -425,7 +425,7 @@ describe("NotionConnector", () => {
     it("includes metadata in document", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -456,7 +456,7 @@ describe("NotionConnector", () => {
     it("yields documents for specific pageIds", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -491,7 +491,7 @@ describe("NotionConnector", () => {
     it("skips page that returns 404", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 
@@ -523,7 +523,7 @@ describe("NotionConnector", () => {
     it("produces correct markdown content from block types", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as { fetchWithRetry: (...args: unknown[]) => Promise<Response> },
         "fetchWithRetry",
       );
 

@@ -83,8 +83,12 @@ const EMBEDDING_DEFAULT_FORM_VALUES: ChatApiKeyFormValues = {
   ...DEFAULT_FORM_VALUES,
 };
 
-function getEmbeddingModelProvider(modelName: string): "openai" | "ollama" {
-  return modelName.startsWith("text-embedding") ? "openai" : "ollama";
+function getEmbeddingModelProvider(
+  modelName: string,
+): "openai" | "ollama" | "gemini" {
+  if (modelName.startsWith("gemini-embedding")) return "gemini";
+  if (modelName.startsWith("text-embedding")) return "openai";
+  return "ollama";
 }
 
 function AddApiKeyDialog({
@@ -172,8 +176,8 @@ function AddApiKeyDialog({
             <Alert variant="default">
               <Info className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                OpenAI and Ollama are supported for embeddings. The key must
-                have access to at least one of the following models:
+                OpenAI, Ollama, and Gemini are supported for embeddings. The key
+                must have access to at least one of the following models:
                 <ul className="mt-1 list-inside list-disc">
                   {Object.keys(EMBEDDING_MODELS).map((model) => (
                     <li key={model}>{model}</li>
@@ -189,7 +193,9 @@ function AddApiKeyDialog({
             isPending={createMutation.isPending}
             bedrockIamAuthEnabled={bedrockIamAuthEnabled}
             geminiVertexAiEnabled={geminiVertexAiEnabled}
-            allowedProviders={forEmbedding ? ["openai", "ollama"] : undefined}
+            allowedProviders={
+              forEmbedding ? ["openai", "ollama", "gemini"] : undefined
+            }
             hideScopeAndPrimary
           />
         </DialogBody>
@@ -326,7 +332,8 @@ function ApiKeySelector({
               {incompatibleKeys.length > 0 && (
                 <>
                   <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1 pt-2">
-                    Only OpenAI and Ollama are supported for embeddings
+                    Only OpenAI, Ollama, and Gemini are supported for
+                    embeddings
                   </div>
                   <LlmProviderApiKeySelectItems
                     options={incompatibleKeys.map((key) => ({
@@ -625,13 +632,13 @@ function KnowledgeSettingsContent() {
           </div>
           <p className="text-sm text-muted-foreground">
             Configure the API key and model used to generate vector embeddings
-            for knowledge base documents. OpenAI and Ollama providers are
-            supported.
+            for knowledge base documents. OpenAI, Ollama, and Gemini providers
+            are supported.
           </p>
 
           <SettingsBlock
             title="LLM Provider API Key"
-            description="Select an API key for generating embeddings (OpenAI or Ollama)."
+            description="Select an API key for generating embeddings (OpenAI, Ollama, or Gemini)."
             control={
               <WithPermissions
                 permissions={{ knowledgeSettings: ["update"] }}
@@ -670,7 +677,9 @@ function KnowledgeSettingsContent() {
                   <div className="space-y-2 w-80">
                     <LlmModelSearchableSelect
                       value={embeddingModel ?? ""}
-                      onValueChange={(v) => setEmbeddingModel(v || null)}
+                      onValueChange={(v) =>
+                        setEmbeddingModel(v || null)
+                      }
                       options={Object.entries(EMBEDDING_MODELS).map(
                         ([value, model]) => ({
                           value,
@@ -732,43 +741,64 @@ function KnowledgeSettingsContent() {
             description={
               isEmbeddingModelLocked
                 ? "Embedding dimensions cannot be changed after configuration is saved."
-                : "Select the vector dimensions for embeddings. Must match the model's output dimensions (e.g. 1536 for OpenAI, 768 for nomic-embed-text)."
+                : "Select the vector dimensions. Must match your model's output dimensions."
             }
             control={
               <WithPermissions
                 permissions={{ knowledgeSettings: ["update"] }}
                 noPermissionHandle="tooltip"
               >
-                {({ hasPermission }) => (
-                  <Select
-                    value={embeddingDimensions?.toString() ?? ""}
-                    onValueChange={(v) =>
-                      setEmbeddingDimensions(v ? Number(v) : null)
-                    }
-                    disabled={
-                      !hasPermission ||
-                      isEmbeddingModelLocked ||
-                      !embeddingChatApiKeyId
-                    }
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        "w-80",
-                        embeddingSetupStep === "select-dimensions" &&
-                          "animate-pulse ring-2 ring-primary/40",
+                {({ hasPermission }) => {
+                  const provider = embeddingModel
+                    ? getEmbeddingModelProvider(embeddingModel)
+                    : null;
+                  const hint =
+                    provider === "gemini"
+                      ? "Use 1536 — Gemini outputs 3072 dims, automatically truncated via outputDimensionality."
+                      : provider === "openai"
+                        ? "Use 1536 for text-embedding-3-small / text-embedding-3-large."
+                        : provider === "ollama"
+                          ? "Use 768 for nomic-embed-text."
+                          : null;
+                  return (
+                    <div className="space-y-2">
+                      <Select
+                        value={embeddingDimensions?.toString() ?? ""}
+                        onValueChange={(v) =>
+                          setEmbeddingDimensions(v ? Number(v) : null)
+                        }
+                        disabled={
+                          !hasPermission ||
+                          isEmbeddingModelLocked ||
+                          !embeddingChatApiKeyId
+                        }
+                      >
+                        <SelectTrigger
+                          className={cn(
+                            "w-80",
+                            embeddingSetupStep === "select-dimensions" &&
+                              "animate-pulse ring-2 ring-primary/40",
+                          )}
+                        >
+                          <SelectValue placeholder="Select dimensions..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUPPORTED_EMBEDDING_DIMENSIONS.map((dim) => (
+                            <SelectItem key={dim} value={dim.toString()}>
+                              {dim}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {hint && (
+                        <p className="text-xs text-muted-foreground flex items-start gap-1">
+                          <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                          {hint}
+                        </p>
                       )}
-                    >
-                      <SelectValue placeholder="Select dimensions..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SUPPORTED_EMBEDDING_DIMENSIONS.map((dim) => (
-                        <SelectItem key={dim} value={dim.toString()}>
-                          {dim}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                    </div>
+                  );
+                }}
               </WithPermissions>
             }
           />
