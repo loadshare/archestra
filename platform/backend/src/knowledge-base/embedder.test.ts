@@ -44,6 +44,7 @@ function makeEmbeddingContext() {
     client: new OpenAI({ apiKey: "test-key" }),
     model: "text-embedding-3-small" as const,
     dimensions: 1536,
+    provider: "openai" as const,
   };
 }
 

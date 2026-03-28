@@ -11,7 +11,9 @@ import OpenAI from "openai";
 import { z } from "zod";
 import config from "@/config";
 import db, { schema } from "@/database";
+import { callGeminiBatchEmbed } from "@/knowledge-base/gemini-embedding-client";
 import { resolveApiKeyFromChatApiKey } from "@/knowledge-base/kb-llm-client";
+import logger from "@/logging";
 import {
   AgentModel,
   InteractionModel,
@@ -316,7 +318,7 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
       if (!EMBEDDING_COMPATIBLE_PROVIDERS.has(chatApiKey.provider)) {
         throw new ApiError(
           400,
-          "Embedding API key must use a compatible provider (OpenAI or Ollama)",
+          "Embedding API key must use a compatible provider (OpenAI, Ollama, or Gemini)",
         );
       }
 
@@ -332,26 +334,39 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
       }
 
       try {
-        const client = new OpenAI({
-          apiKey: resolved.apiKey,
-          baseURL: resolved.baseUrl ?? undefined,
-        });
+        let embeddingCount = 0;
 
-        const response = await client.embeddings.create({
-          model: body.embeddingModel,
-          input: [
-            addNomicTaskPrefix(
-              body.embeddingModel,
-              "hello world",
-              "search_document",
-            ),
-          ],
-          ...(body.embeddingModel.includes("nomic")
-            ? {}
-            : { dimensions: getEmbeddingDimensions(body.embeddingModel) }),
-        });
+        if (resolved.provider === "gemini") {
+          const response = await callGeminiBatchEmbed({
+            texts: ["hello world"],
+            model: body.embeddingModel,
+            apiKey: resolved.apiKey,
+            baseUrl: resolved.baseUrl,
+          });
+          embeddingCount = response.data.length;
+        } else {
+          const client = new OpenAI({
+            apiKey: resolved.apiKey,
+            baseURL: resolved.baseUrl ?? undefined,
+          });
 
-        if (response.data.length > 0) {
+          const response = await client.embeddings.create({
+            model: body.embeddingModel,
+            input: [
+              addNomicTaskPrefix(
+                body.embeddingModel,
+                "hello world",
+                "search_document",
+              ),
+            ],
+            ...(body.embeddingModel.includes("nomic")
+              ? {}
+              : { dimensions: getEmbeddingDimensions(body.embeddingModel) }),
+          });
+          embeddingCount = response.data.length;
+        }
+
+        if (embeddingCount > 0) {
           return reply.send({ success: true });
         }
 
@@ -361,6 +376,7 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
+        logger.error({ err }, "[testEmbeddingConnection] embedding call failed");
         return reply.send({ success: false, error: message });
       }
     },

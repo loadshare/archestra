@@ -104,6 +104,17 @@ vi.mock("@/lib/llm-models.query", () => ({
     ],
     isPending: false,
   }),
+  useEmbeddingModels: () => ({
+    data: [
+      {
+        id: "text-embedding-3-small",
+        provider: "openai",
+        displayName: "text-embedding-3-small",
+        isEmbedding: true,
+      },
+    ],
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/lib/config/config.query", () => ({
@@ -309,7 +320,7 @@ describe("KnowledgeSettingsPage", () => {
       await user.click(getEmbeddingModelTrigger());
 
       expect(
-        screen.getAllByText("Best cost/quality ratio (1536 dims)").length,
+        screen.getAllByText("text-embedding-3-small").length,
       ).toBeGreaterThanOrEqual(1);
     });
 

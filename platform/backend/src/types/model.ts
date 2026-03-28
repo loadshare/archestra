@@ -90,6 +90,7 @@ export const PatchModelBodySchema = createUpdateSchema(
     customPricePerMillionInput: true,
     customPricePerMillionOutput: true,
     ignored: true,
+    isEmbedding: true,
     inputModalities: true,
     outputModalities: true,
   })
@@ -97,6 +98,7 @@ export const PatchModelBodySchema = createUpdateSchema(
     customPricePerMillionInput: z.string().nullable().optional(),
     customPricePerMillionOutput: z.string().nullable().optional(),
     ignored: z.boolean().optional(),
+    isEmbedding: z.boolean().optional(),
     inputModalities: z
       .array(ModelInputModalitySchema)
       .min(1, "At least one input modality is required")

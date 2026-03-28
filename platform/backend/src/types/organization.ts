@@ -174,7 +174,7 @@ export const UpdateAgentSettingsSchema = z.object({
 
 export const UpdateKnowledgeSettingsSchema = z.object({
   embeddingModel: z.string().min(1).optional(),
-  embeddingDimensions: z.union([z.literal(1536), z.literal(768)]).optional(),
+  embeddingDimensions: z.union([z.literal(3072), z.literal(1536), z.literal(768)]).optional(),
   embeddingChatApiKeyId: z.string().uuid().nullable().optional(),
   rerankerChatApiKeyId: z.string().uuid().nullable().optional(),
   rerankerModel: z.string().nullable().optional(),

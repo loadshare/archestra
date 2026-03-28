@@ -345,6 +345,7 @@ interface EditModelFormValues {
   customPricePerMillionInput: string;
   customPricePerMillionOutput: string;
   ignored: boolean;
+  isEmbedding: boolean;
   inputModalities: string[];
   outputModalities: string[];
 }
@@ -383,6 +384,7 @@ function EditModelDialog({
       customPricePerMillionInput: inputPrice,
       customPricePerMillionOutput: outputPrice,
       ignored: values.ignored,
+      isEmbedding: values.isEmbedding,
       inputModalities: values.inputModalities as ModelInputModality[],
       outputModalities: values.outputModalities as ModelOutputModality[],
     });
@@ -607,6 +609,32 @@ function EditModelDialog({
 
           <FormField
             control={form.control}
+            name="isEmbedding"
+            render={({ field }) => (
+              <FormItem className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <FormLabel>Use as embedding model</FormLabel>
+                    <p className="text-sm text-muted-foreground">
+                      Embedding models appear in the knowledge base embedding
+                      model selector. Auto-detected from model name; override
+                      here if needed.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
             name="ignored"
             render={({ field }) => (
               <FormItem className="rounded-lg border p-3">
@@ -776,6 +804,7 @@ function getDefaults(model: ModelWithApiKeys): EditModelFormValues {
     customPricePerMillionInput: model.customPricePerMillionInput ?? "",
     customPricePerMillionOutput: model.customPricePerMillionOutput ?? "",
     ignored: model.ignored,
+    isEmbedding: model.isEmbedding,
     inputModalities: model.inputModalities ?? [],
     outputModalities: model.outputModalities ?? [],
   };

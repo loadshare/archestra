@@ -6,10 +6,16 @@ import logger from "@/logging";
 import { LlmProviderApiKeyModel, OrganizationModel } from "@/models";
 import { getSecretValueForLlmProviderApiKey } from "@/secrets-manager";
 
-interface EmbeddingConfig {
-  client: OpenAI;
+export interface EmbeddingConfig {
+  /** OpenAI SDK client. null for Gemini, which uses its own HTTP client. */
+  client: OpenAI | null;
+  /** Gemini API key — only set when provider is "gemini". */
+  geminiApiKey?: string;
+  /** Gemini base URL override — only set when provider is "gemini". */
+  geminiBaseUrl?: string | null;
   model: EmbeddingModel;
   dimensions: number;
+  provider: SupportedProvider;
 }
 
 interface RerankerConfig {
@@ -39,6 +45,18 @@ export async function resolveEmbeddingConfig(
     return null;
   }
 
+  if (resolved.provider === "gemini") {
+    return {
+      client: null,
+      geminiApiKey: resolved.apiKey,
+      geminiBaseUrl: resolved.baseUrl,
+      model: org.embeddingModel,
+      dimensions:
+        org.embeddingDimensions ?? getEmbeddingDimensions(org.embeddingModel),
+      provider: "gemini",
+    };
+  }
+
   return {
     client: new OpenAI({
       apiKey: resolved.apiKey,
@@ -47,6 +65,7 @@ export async function resolveEmbeddingConfig(
     model: org.embeddingModel,
     dimensions:
       org.embeddingDimensions ?? getEmbeddingDimensions(org.embeddingModel),
+    provider: resolved.provider,
   };
 }
 
