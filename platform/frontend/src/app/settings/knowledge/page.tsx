@@ -678,10 +678,7 @@ function KnowledgeSettingsContent() {
                       onValueChange={(v) => setEmbeddingModel(v || null)}
                       options={(embeddingModels ?? []).map((model) => ({
                         value: model.id,
-                        model: model.displayName || model.id,
-                        description: model.capabilities
-                          ? `${model.provider}`
-                          : model.provider,
+                        model: model.id,
                         provider: getEmbeddingModelProvider(model.id),
                       }))}
                       placeholder="Select embedding model..."
