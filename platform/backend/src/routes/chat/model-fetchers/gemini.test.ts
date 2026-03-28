@@ -21,7 +21,7 @@ describe("gemini model fetchers", () => {
   });
 
   describe("fetchGeminiModels", () => {
-    test("fetches and filters Gemini models that support generateContent", async () => {
+    test("fetches Gemini models that support generateContent or embedContent", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () =>
@@ -38,9 +38,14 @@ describe("gemini model fetchers", () => {
                 supportedGenerationMethods: ["generateContent", "countTokens"],
               },
               {
-                name: "models/embedding-001",
-                displayName: "Text Embedding",
-                supportedGenerationMethods: ["embedContent"],
+                name: "models/gemini-embedding-001",
+                displayName: "Gemini Embedding 001",
+                supportedGenerationMethods: ["embedContent", "batchEmbedContents"],
+              },
+              {
+                name: "models/aqa",
+                displayName: "AQA",
+                supportedGenerationMethods: ["generateAnswer"],
               },
             ],
           }),
@@ -57,6 +62,11 @@ describe("gemini model fetchers", () => {
         {
           id: "gemini-2.5-flash",
           displayName: "Gemini 2.5 Flash",
+          provider: "gemini",
+        },
+        {
+          id: "gemini-embedding-001",
+          displayName: "Gemini Embedding 001",
           provider: "gemini",
         },
       ]);
