@@ -33,6 +33,7 @@ const LlmModelSchema = z.object({
   capabilities: ModelCapabilitiesSchema.optional(),
   isBest: z.boolean().optional(),
   isFastest: z.boolean().optional(),
+  isEmbedding: z.boolean().optional(),
 });
 
 const llmModelsRoutes: FastifyPluginAsyncZod = async (fastify) => {
@@ -47,12 +48,16 @@ const llmModelsRoutes: FastifyPluginAsyncZod = async (fastify) => {
         querystring: z.object({
           provider: SupportedProvidersSchema.optional(),
           apiKeyId: z.string().uuid().optional(),
+          isEmbedding: z
+            .string()
+            .transform((v) => v === "true")
+            .optional(),
         }),
         response: constructResponseSchema(z.array(LlmModelSchema)),
       },
     },
     async ({ query, organizationId, user }, reply) => {
-      const { provider, apiKeyId } = query;
+      const { provider, apiKeyId, isEmbedding } = query;
 
       modelsDevClient.syncIfNeeded();
 
@@ -105,12 +110,21 @@ const llmModelsRoutes: FastifyPluginAsyncZod = async (fastify) => {
         "Models fetched from database",
       );
 
-      const filteredModels = provider
+      let filteredModels = provider
         ? dbModels.filter(({ model }) => model.provider === provider)
         : dbModels;
 
+      // Filter by embedding status if requested
+      if (isEmbedding !== undefined) {
+        filteredModels = filteredModels.filter(
+          ({ model }) => model.isEmbedding === isEmbedding,
+        );
+      }
+
       const models = filteredModels
-        .filter(({ model }) => ModelModel.supportsTextChat(model))
+        .filter(({ model }) =>
+          isEmbedding ? true : ModelModel.supportsTextChat(model),
+        )
         .map(({ model, isBest, isFastest }) => ({
           id: model.modelId,
           displayName: model.description || model.modelId,
@@ -118,6 +132,7 @@ const llmModelsRoutes: FastifyPluginAsyncZod = async (fastify) => {
           capabilities: ModelModel.toCapabilities(model),
           isBest,
           isFastest,
+          isEmbedding: model.isEmbedding,
         }));
 
       logger.info(

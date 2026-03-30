@@ -76,6 +76,12 @@ const modelsTable = pgTable(
     /** Whether this model should be excluded from chat model selection. */
     ignored: boolean("ignored").notNull().default(false),
 
+    /**
+     * Whether this model is an embedding model (i.e., supports vector embedding generation).
+     * Auto-inferred from model name/id during sync; can be overridden manually.
+     */
+    isEmbedding: boolean("is_embedding").notNull().default(false),
+
     /** Whether this model was discovered via an LLM Proxy request (ensureModelExists).
      * Models with this flag are preserved even without API key links,
      * so users can define custom token pricing for metrics. */

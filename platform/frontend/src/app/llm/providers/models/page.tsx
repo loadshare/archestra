@@ -65,6 +65,7 @@ export default function ModelsPage() {
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [search, setSearch] = useState("");
   const [apiKeyFilter, setApiKeyFilter] = useState<string>("all");
+  const [modelTypeFilter, setModelTypeFilter] = useState<"all" | "chat" | "embedding">("all");
   const [editingModel, setEditingModel] = useState<ModelWithApiKeys | null>(
     null,
   );
@@ -80,13 +81,18 @@ export default function ModelsPage() {
         m.apiKeys.some((k) => k.id === apiKeyFilter),
       );
     }
+    if (modelTypeFilter === "embedding") {
+      result = result.filter((m) => m.isEmbedding);
+    } else if (modelTypeFilter === "chat") {
+      result = result.filter((m) => !m.isEmbedding);
+    }
     // Stable sort so rows don't jump when data refetches after edits
     return [...result].sort(
       (a, b) =>
         a.provider.localeCompare(b.provider) ||
         a.modelId.localeCompare(b.modelId),
     );
-  }, [models, search, apiKeyFilter]);
+  }, [models, search, apiKeyFilter, modelTypeFilter]);
 
   const availableApiKeys = useMemo(() => {
     const keyMap = new Map<
@@ -159,6 +165,9 @@ export default function ModelsPage() {
             <span className="font-mono text-sm">{row.original.modelId}</span>
             {row.original.isFastest && <FastestModelBadge />}
             {row.original.isBest && <BestModelBadge />}
+            {row.original.isEmbedding && (
+              <Badge variant="secondary" className="text-xs">Embedding</Badge>
+            )}
           </div>
         ),
       },
@@ -301,6 +310,17 @@ export default function ModelsPage() {
                 ];
               })}
             />
+            <SearchableSelect
+              value={modelTypeFilter}
+              onValueChange={(v) => setModelTypeFilter(v as "all" | "chat" | "embedding")}
+              placeholder="Model type"
+              className="w-full sm:w-[200px]"
+              items={[
+                { value: "all", label: "All models" },
+                { value: "chat", label: "Chat / generation" },
+                { value: "embedding", label: "Embedding" },
+              ]}
+            />
           </div>
         )}
         <DataTable
@@ -312,11 +332,12 @@ export default function ModelsPage() {
           }
           hideSelectedCount
           isLoading={isPending}
-          hasActiveFilters={Boolean(search || apiKeyFilter !== "all")}
+          hasActiveFilters={Boolean(search || apiKeyFilter !== "all" || modelTypeFilter !== "all")}
           filteredEmptyMessage="No models match your filters. Try adjusting your search."
           onClearFilters={() => {
             setSearch("");
             setApiKeyFilter("all");
+            setModelTypeFilter("all");
           }}
           emptyMessage={
             apiKeys.length === 0
@@ -345,6 +366,7 @@ interface EditModelFormValues {
   customPricePerMillionInput: string;
   customPricePerMillionOutput: string;
   ignored: boolean;
+  isEmbedding: boolean;
   inputModalities: string[];
   outputModalities: string[];
 }
@@ -383,6 +405,7 @@ function EditModelDialog({
       customPricePerMillionInput: inputPrice,
       customPricePerMillionOutput: outputPrice,
       ignored: values.ignored,
+      isEmbedding: values.isEmbedding,
       inputModalities: values.inputModalities as ModelInputModality[],
       outputModalities: values.outputModalities as ModelOutputModality[],
     });
@@ -607,6 +630,32 @@ function EditModelDialog({
 
           <FormField
             control={form.control}
+            name="isEmbedding"
+            render={({ field }) => (
+              <FormItem className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <FormLabel>Use as embedding model</FormLabel>
+                    <p className="text-sm text-muted-foreground">
+                      Embedding models appear in the knowledge base embedding
+                      model selector. Auto-detected from model name; override
+                      here if needed.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
             name="ignored"
             render={({ field }) => (
               <FormItem className="rounded-lg border p-3">
@@ -776,6 +825,7 @@ function getDefaults(model: ModelWithApiKeys): EditModelFormValues {
     customPricePerMillionInput: model.customPricePerMillionInput ?? "",
     customPricePerMillionOutput: model.customPricePerMillionOutput ?? "",
     ignored: model.ignored,
+    isEmbedding: model.isEmbedding,
     inputModalities: model.inputModalities ?? [],
     outputModalities: model.outputModalities ?? [],
   };

@@ -233,6 +233,7 @@ class ModelModel {
               supportsToolCalling: sql`COALESCE(${schema.modelsTable.supportsToolCalling}, excluded.supports_tool_calling)`,
               promptPricePerToken: sql`excluded.prompt_price_per_token`,
               completionPricePerToken: sql`excluded.completion_price_per_token`,
+              isEmbedding: sql`excluded.is_embedding`,
               lastSyncedAt: sql`excluded.last_synced_at`,
               updatedAt: sql`NOW()`,
               // NOTE: customPricePerMillionInput/Output intentionally NOT updated
@@ -299,6 +300,7 @@ class ModelModel {
               supportsToolCalling: sql`excluded.supports_tool_calling`,
               promptPricePerToken: sql`excluded.prompt_price_per_token`,
               completionPricePerToken: sql`excluded.completion_price_per_token`,
+              isEmbedding: sql`excluded.is_embedding`,
               customPricePerMillionInput: sql`NULL`,
               customPricePerMillionOutput: sql`NULL`,
               lastSyncedAt: sql`excluded.last_synced_at`,
@@ -554,6 +556,10 @@ class ModelModel {
 
   static supportsTextChat(model: Model): boolean {
     if (model.ignored) {
+      return false;
+    }
+
+    if (model.isEmbedding) {
       return false;
     }
 

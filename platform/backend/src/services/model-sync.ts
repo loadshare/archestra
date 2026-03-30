@@ -207,9 +207,35 @@ export function buildModelsToUpsert(params: {
       supportsToolCalling: capabilities.supportsToolCalling,
       promptPricePerToken: capabilities.promptPricePerToken,
       completionPricePerToken: capabilities.completionPricePerToken,
+      isEmbedding: inferIsEmbedding(model.id, provider),
       lastSyncedAt: new Date(),
     };
   });
+}
+
+/**
+ * Best-effort inference of whether a model is an embedding model, based on its
+ * name/ID. This is used during model sync as the default value; users can
+ * override it manually via the model edit dialog.
+ *
+ * Rules (in priority order):
+ * - OpenAI: model ID starts with "text-embedding"
+ * - Gemini: model ID contains "embedding"
+ * - Ollama / generic: model ID contains "embed" (covers nomic-embed-text, etc.)
+ */
+export function inferIsEmbedding(
+  modelId: string,
+  provider: SupportedProvider,
+): boolean {
+  const id = modelId.toLowerCase();
+  if (provider === "openai") {
+    return id.startsWith("text-embedding");
+  }
+  if (provider === "gemini") {
+    return id.includes("embedding");
+  }
+  // Generic fallback: catches "nomic-embed-text", "mxbai-embed-large", etc.
+  return id.includes("embed");
 }
 
 export function resolveModelCapabilities(params: {

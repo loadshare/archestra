@@ -2,7 +2,6 @@
 
 import {
   EMBEDDING_COMPATIBLE_PROVIDERS,
-  EMBEDDING_MODELS,
   PROVIDERS_WITH_OPTIONAL_API_KEY,
   SUPPORTED_EMBEDDING_DIMENSIONS,
 } from "@shared";
@@ -54,7 +53,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useFeature } from "@/lib/config/config.query";
-import { useLlmModels } from "@/lib/llm-models.query";
+import { useEmbeddingModels, useLlmModels } from "@/lib/llm-models.query";
 import {
   useAvailableLlmProviderApiKeys,
   useCreateLlmProviderApiKey,
@@ -86,7 +85,8 @@ const EMBEDDING_DEFAULT_FORM_VALUES: LlmProviderApiKeyFormValues = {
 function getEmbeddingModelProvider(
   modelName: string,
 ): "openai" | "ollama" | "gemini" {
-  if (modelName.startsWith("gemini-embedding")) return "gemini";
+  if (modelName.includes("gemini") || modelName.includes("embedding-001"))
+    return "gemini";
   if (modelName.startsWith("text-embedding")) return "openai";
   return "ollama";
 }
@@ -162,7 +162,7 @@ function AddApiKeyDialog({
       title="Add LLM Provider Key"
       description={
         forEmbedding
-          ? "Add an API key for knowledge base embeddings (OpenAI or Ollama)."
+          ? "Add an API key for knowledge base embeddings (OpenAI, Ollama, or Gemini)."
           : "Add an LLM provider API key for knowledge base reranking."
       }
       size="small"
@@ -176,13 +176,9 @@ function AddApiKeyDialog({
             <Alert variant="default">
               <Info className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                OpenAI, Ollama, and Gemini are supported for embeddings. The key
-                must have access to at least one of the following models:
-                <ul className="mt-1 list-inside list-disc">
-                  {Object.keys(EMBEDDING_MODELS).map((model) => (
-                    <li key={model}>{model}</li>
-                  ))}
-                </ul>
+                OpenAI, Ollama, and Gemini are supported for embeddings. After
+                adding the key, sync models and mark an embedding model via the
+                model catalog (LLM Providers → Models).
               </AlertDescription>
             </Alert>
           )}
@@ -516,6 +512,9 @@ function KnowledgeSettingsContent() {
     null,
   );
 
+  // Fetch embedding models dynamically from DB based on selected API key
+  const { data: embeddingModels } = useEmbeddingModels(embeddingChatApiKeyId);
+
   useEffect(() => {
     if (organization) {
       // Only set embedding model if user has explicitly configured a key
@@ -585,7 +584,7 @@ function KnowledgeSettingsContent() {
     await updateKnowledgeSettings.mutateAsync({
       embeddingModel: embeddingModel ?? undefined,
       embeddingDimensions:
-        (embeddingDimensions as 1536 | 768 | null) ?? undefined,
+        (embeddingDimensions as 3072 | 1536 | 768 | null) ?? undefined,
       embeddingChatApiKeyId: embeddingChatApiKeyId ?? null,
       rerankerChatApiKeyId: rerankerChatApiKeyId ?? null,
       rerankerModel: rerankerModel ?? null,
@@ -677,17 +676,12 @@ function KnowledgeSettingsContent() {
                   <div className="space-y-2 w-80">
                     <LlmModelSearchableSelect
                       value={embeddingModel ?? ""}
-                      onValueChange={(v) =>
-                        setEmbeddingModel(v || null)
-                      }
-                      options={Object.entries(EMBEDDING_MODELS).map(
-                        ([value, model]) => ({
-                          value,
-                          model: model.label,
-                          description: model.description,
-                          provider: getEmbeddingModelProvider(value),
-                        }),
-                      )}
+                      onValueChange={(v) => setEmbeddingModel(v || null)}
+                      options={(embeddingModels ?? []).map((model) => ({
+                        value: model.id,
+                        model: model.id,
+                        provider: getEmbeddingModelProvider(model.id),
+                      }))}
                       placeholder="Select embedding model..."
                       searchPlaceholder="Search or type model name..."
                       className={cn(
@@ -754,14 +748,14 @@ function KnowledgeSettingsContent() {
                     : null;
                   const hint =
                     provider === "gemini"
-                      ? "Use 1536 — Gemini outputs 3072 dims, automatically truncated via outputDimensionality."
+                      ? "Gemini outputs 3072 dims natively; use 1536 to truncate via outputDimensionality."
                       : provider === "openai"
                         ? "Use 1536 for text-embedding-3-small / text-embedding-3-large."
                         : provider === "ollama"
                           ? "Use 768 for nomic-embed-text."
                           : null;
                   return (
-                    <div className="space-y-2">
+                    <div className="space-y-2 w-80">
                       <Select
                         value={embeddingDimensions?.toString() ?? ""}
                         onValueChange={(v) =>

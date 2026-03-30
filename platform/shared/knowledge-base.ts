@@ -26,7 +26,7 @@ export const EMBEDDING_COMPATIBLE_PROVIDERS = new Set(["openai", "ollama", "gemi
  * Supported embedding column sizes. Each entry maps to a dedicated
  * `vector(N)` column and HNSW index in the `kb_chunks` table.
  */
-export const SUPPORTED_EMBEDDING_DIMENSIONS = [1536, 768] as const;
+export const SUPPORTED_EMBEDDING_DIMENSIONS = [3072, 1536, 768] as const;
 export type SupportedEmbeddingDimension =
   (typeof SUPPORTED_EMBEDDING_DIMENSIONS)[number];
 
@@ -69,8 +69,8 @@ export const EMBEDDING_MODELS: Record<string, EmbeddingModelMeta> = {
   },
   "gemini-embedding-001": {
     label: "gemini-embedding-001",
-    description: "Google Gemini embedding model, 3072 dims truncated to 1536",
-    dimensions: 1536,
+    description: "Google Gemini embedding model, 3072 dims (or truncated to 1536 via outputDimensionality)",
+    dimensions: 3072,
   },
 };
 
