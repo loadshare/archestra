@@ -1,17 +1,14 @@
 import {
   AUTO_PROVISIONED_INVITATION_STATUS,
   addNomicTaskPrefix,
-  EMBEDDING_COMPATIBLE_PROVIDERS,
-  getEmbeddingDimensions,
   RouteId,
 } from "@shared";
 import { and, eq, inArray, like } from "drizzle-orm";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import OpenAI from "openai";
 import { z } from "zod";
 import config from "@/config";
 import db, { schema } from "@/database";
-import { callGeminiBatchEmbed } from "@/knowledge-base/gemini-embedding-client";
+import { callEmbedding } from "@/knowledge-base/embedding-clients";
 import { resolveApiKeyFromChatApiKey } from "@/knowledge-base/kb-llm-client";
 import logger from "@/logging";
 import {
@@ -220,19 +217,13 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }
       }
 
-      // Validate embedding API key uses an embedding-compatible provider
+      // Validate embedding API key exists
       if (body.embeddingChatApiKeyId) {
         const chatApiKey = await LlmProviderApiKeyModel.findById(
           body.embeddingChatApiKeyId,
         );
         if (!chatApiKey) {
           throw new ApiError(404, "Embedding API key not found");
-        }
-        if (!EMBEDDING_COMPATIBLE_PROVIDERS.has(chatApiKey.provider)) {
-          throw new ApiError(
-            400,
-            "Embedding API key must use a compatible provider (OpenAI or Ollama)",
-          );
         }
       }
 
@@ -308,18 +299,12 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async ({ body }, reply) => {
-      // Validate API key exists and uses an embedding-compatible provider
+      // Validate API key exists
       const chatApiKey = await LlmProviderApiKeyModel.findById(
         body.embeddingChatApiKeyId,
       );
       if (!chatApiKey) {
         throw new ApiError(404, "API key not found");
-      }
-      if (!EMBEDDING_COMPATIBLE_PROVIDERS.has(chatApiKey.provider)) {
-        throw new ApiError(
-          400,
-          "Embedding API key must use a compatible provider (OpenAI, Ollama, or Gemini)",
-        );
       }
 
       // Resolve the actual secret
@@ -334,39 +319,17 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
       }
 
       try {
-        let embeddingCount = 0;
+        const response = await callEmbedding({
+          texts: [
+            addNomicTaskPrefix(body.embeddingModel, "hello world", "search_document"),
+          ],
+          model: body.embeddingModel,
+          apiKey: resolved.apiKey,
+          baseUrl: resolved.baseUrl,
+          provider: resolved.provider,
+        });
 
-        if (resolved.provider === "gemini") {
-          const response = await callGeminiBatchEmbed({
-            texts: ["hello world"],
-            model: body.embeddingModel,
-            apiKey: resolved.apiKey,
-            baseUrl: resolved.baseUrl,
-          });
-          embeddingCount = response.data.length;
-        } else {
-          const client = new OpenAI({
-            apiKey: resolved.apiKey,
-            baseURL: resolved.baseUrl ?? undefined,
-          });
-
-          const response = await client.embeddings.create({
-            model: body.embeddingModel,
-            input: [
-              addNomicTaskPrefix(
-                body.embeddingModel,
-                "hello world",
-                "search_document",
-              ),
-            ],
-            ...(body.embeddingModel.includes("nomic")
-              ? {}
-              : { dimensions: getEmbeddingDimensions(body.embeddingModel) }),
-          });
-          embeddingCount = response.data.length;
-        }
-
-        if (embeddingCount > 0) {
+        if (response.data.length > 0) {
           return reply.send({ success: true });
         }
 

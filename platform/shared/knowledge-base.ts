@@ -16,19 +16,16 @@ export const EMBEDDING_BATCH_SIZE = 100;
 export const EMBEDDING_DIMENSIONS = 1536;
 
 /**
- * Providers whose API keys can be used for embedding.
- * - openai / ollama: use the OpenAI-compatible `/v1/embeddings` endpoint
- * - gemini: uses Google's native `batchEmbedContents` API
- */
-export const EMBEDDING_COMPATIBLE_PROVIDERS = new Set(["openai", "ollama", "gemini"]);
-
-/**
  * Supported embedding column sizes. Each entry maps to a dedicated
  * `vector(N)` column and HNSW index in the `kb_chunks` table.
  */
+export const EmbeddingDimensionsSchema = z.union([
+  z.literal(3072),
+  z.literal(1536),
+  z.literal(768),
+]);
+export type SupportedEmbeddingDimension = z.infer<typeof EmbeddingDimensionsSchema>;
 export const SUPPORTED_EMBEDDING_DIMENSIONS = [3072, 1536, 768] as const;
-export type SupportedEmbeddingDimension =
-  (typeof SUPPORTED_EMBEDDING_DIMENSIONS)[number];
 
 /**
  * Maps a dimension size to its database column name.

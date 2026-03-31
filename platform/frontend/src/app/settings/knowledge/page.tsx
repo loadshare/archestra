@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  EMBEDDING_COMPATIBLE_PROVIDERS,
   PROVIDERS_WITH_OPTIONAL_API_KEY,
   SUPPORTED_EMBEDDING_DIMENSIONS,
+  type SupportedProvider,
 } from "@shared";
 import {
   AlertTriangle,
@@ -82,9 +82,7 @@ const EMBEDDING_DEFAULT_FORM_VALUES: LlmProviderApiKeyFormValues = {
   ...DEFAULT_FORM_VALUES,
 };
 
-function getEmbeddingModelProvider(
-  modelName: string,
-): "openai" | "ollama" | "gemini" {
+function getEmbeddingModelProvider(modelName: string): SupportedProvider {
   if (modelName.includes("gemini") || modelName.includes("embedding-001"))
     return "gemini";
   if (modelName.startsWith("text-embedding")) return "openai";
@@ -235,14 +233,8 @@ function ApiKeySelector({
   const prevSelectableCountRef = useRef<number | null>(null);
 
   const keys = apiKeys ?? [];
-  const compatibleKeys = keys.filter((k) =>
-    EMBEDDING_COMPATIBLE_PROVIDERS.has(k.provider),
-  );
-  const incompatibleKeys = keys.filter(
-    (k) => !EMBEDDING_COMPATIBLE_PROVIDERS.has(k.provider),
-  );
   const isEmbeddingSelector = !!filterEmbeddingProviders;
-  const selectableKeys = isEmbeddingSelector ? compatibleKeys : keys;
+  const selectableKeys = keys;
   const hasSelectableKeys = selectableKeys.length > 0;
   const selectedKey = keys.find((key) => key.id === value) ?? null;
 
@@ -314,46 +306,15 @@ function ApiKeySelector({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {isEmbeddingSelector ? (
-            <>
-              <LlmProviderApiKeySelectItems
-                options={compatibleKeys.map((key) => ({
-                  value: key.id,
-                  icon: PROVIDER_CONFIG[key.provider].icon,
-                  providerName: PROVIDER_CONFIG[key.provider].name,
-                  keyName: key.name,
-                  secondaryLabel: `${key.provider} - ${key.scope}`,
-                }))}
-              />
-              {incompatibleKeys.length > 0 && (
-                <>
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1 pt-2">
-                    Only OpenAI and Ollama are supported for embeddings
-                  </div>
-                  <LlmProviderApiKeySelectItems
-                    options={incompatibleKeys.map((key) => ({
-                      value: key.id,
-                      icon: PROVIDER_CONFIG[key.provider].icon,
-                      providerName: PROVIDER_CONFIG[key.provider].name,
-                      keyName: key.name,
-                      secondaryLabel: key.provider,
-                      disabled: true,
-                    }))}
-                  />
-                </>
-              )}
-            </>
-          ) : (
-            <LlmProviderApiKeySelectItems
-              options={keys.map((key) => ({
-                value: key.id,
-                icon: PROVIDER_CONFIG[key.provider].icon,
-                providerName: PROVIDER_CONFIG[key.provider].name,
-                keyName: key.name,
-                secondaryLabel: `${key.provider} - ${key.scope}`,
-              }))}
-            />
-          )}
+          <LlmProviderApiKeySelectItems
+            options={keys.map((key) => ({
+              value: key.id,
+              icon: PROVIDER_CONFIG[key.provider].icon,
+              providerName: PROVIDER_CONFIG[key.provider].name,
+              keyName: key.name,
+              secondaryLabel: `${key.provider} - ${key.scope}`,
+            }))}
+          />
         </SelectContent>
       </Select>
     </div>
@@ -549,13 +510,7 @@ function KnowledgeSettingsContent() {
     !!serverEmbeddingKeyId && !!serverEmbeddingModel;
 
   // Check if keys exist for pulsing logic
-  const hasEmbeddingKeys = useMemo(
-    () =>
-      (apiKeys ?? []).some((k) =>
-        EMBEDDING_COMPATIBLE_PROVIDERS.has(k.provider),
-      ),
-    [apiKeys],
-  );
+  const hasEmbeddingKeys = useMemo(() => (apiKeys ?? []).length > 0, [apiKeys]);
   const hasAnyKeys = useMemo(() => (apiKeys ?? []).length > 0, [apiKeys]);
   const isInitialLoading = isPending || areApiKeysPending;
 

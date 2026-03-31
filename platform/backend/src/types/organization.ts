@@ -1,4 +1,4 @@
-import { OrganizationCustomFontSchema, OrganizationThemeSchema } from "@shared";
+import { EmbeddingDimensionsSchema, OrganizationCustomFontSchema, OrganizationThemeSchema } from "@shared";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { schema } from "@/database";
@@ -174,7 +174,7 @@ export const UpdateAgentSettingsSchema = z.object({
 
 export const UpdateKnowledgeSettingsSchema = z.object({
   embeddingModel: z.string().min(1).optional(),
-  embeddingDimensions: z.union([z.literal(3072), z.literal(1536), z.literal(768)]).optional(),
+  embeddingDimensions: EmbeddingDimensionsSchema.optional(),
   embeddingChatApiKeyId: z.string().uuid().nullable().optional(),
   rerankerChatApiKeyId: z.string().uuid().nullable().optional(),
   rerankerModel: z.string().nullable().optional(),

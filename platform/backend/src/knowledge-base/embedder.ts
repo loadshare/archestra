@@ -1,35 +1,26 @@
-import type { EmbeddingModel, SupportedProvider } from "@shared";
+import type { EmbeddingModel } from "@shared";
 import { addNomicTaskPrefix, EMBEDDING_BATCH_SIZE } from "@shared";
-import OpenAI from "openai";
 import logger from "@/logging";
 import { KbChunkModel, KbDocumentModel } from "@/models";
 import {
-  callGeminiBatchEmbed,
+  callEmbedding,
+  getEmbeddingDiscriminator,
+  isRetryableEmbeddingError,
   type EmbeddingApiResponse,
-  GeminiApiError,
-} from "./gemini-embedding-client";
+} from "./embedding-clients";
 import {
   buildEmbeddingInteraction,
   withKbObservability,
 } from "./kb-interaction";
-import { getDefaultOrgEmbeddingConfig } from "./kb-llm-client";
+import { getDefaultOrgEmbeddingConfig, type EmbeddingConfig } from "./kb-llm-client";
 
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000;
 
-interface EmbeddingContext {
-  client: OpenAI | null;
-  geminiApiKey?: string;
-  geminiBaseUrl?: string | null;
-  model: EmbeddingModel;
-  dimensions: number;
-  provider: SupportedProvider;
-}
-
 class EmbeddingService {
   async processDocument(
     documentId: string,
-    ctx: EmbeddingContext,
+    ctx: EmbeddingConfig,
   ): Promise<void> {
     const document = await KbDocumentModel.findById(documentId);
     if (!document) {
@@ -253,39 +244,26 @@ class EmbeddingService {
   }
 
   private async callEmbeddingApiWithRetry(
-    ctx: EmbeddingContext,
+    ctx: EmbeddingConfig,
     texts: string[],
   ): Promise<EmbeddingApiResponse> {
-    const isGemini = ctx.provider === "gemini";
-    const provider = isGemini ? "gemini" : "openai";
-    const type = isGemini ? "gemini:embeddings" : "openai:embeddings";
-
     for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
       try {
-        const response = await withKbObservability({
+        return await withKbObservability({
           operationName: "embedding",
-          provider,
+          provider: ctx.provider,
           model: ctx.model,
           source: "knowledge:embedding",
-          type,
-          callback: () => {
-            if (isGemini) {
-              return callGeminiBatchEmbed({
-                texts,
-                model: ctx.model,
-                apiKey: ctx.geminiApiKey ?? "",
-                baseUrl: ctx.geminiBaseUrl,
-                dimensions: ctx.dimensions,
-              });
-            }
-            return ctx.client!.embeddings.create({
+          type: getEmbeddingDiscriminator(ctx.provider),
+          callback: () =>
+            callEmbedding({
+              texts,
               model: ctx.model,
-              input: texts,
-              ...(ctx.model.startsWith("nomic")
-                ? {}
-                : { dimensions: ctx.dimensions }),
-            });
-          },
+              apiKey: ctx.apiKey,
+              baseUrl: ctx.baseUrl,
+              dimensions: ctx.dimensions,
+              provider: ctx.provider,
+            }),
           buildInteraction: (resp) =>
             buildEmbeddingInteraction({
               model: ctx.model,
@@ -294,11 +272,9 @@ class EmbeddingService {
               response: resp,
             }),
         });
-
-        return response;
       } catch (error) {
         const isLastAttempt = attempt === RETRY_MAX_ATTEMPTS;
-        if (isLastAttempt || !this.isRetryableError(error)) {
+        if (isLastAttempt || !isRetryableEmbeddingError(error)) {
           throw error;
         }
 
@@ -317,20 +293,6 @@ class EmbeddingService {
 
     // Unreachable, but satisfies TypeScript
     throw new Error("Retry loop exited unexpectedly");
-  }
-
-  private isRetryableError(error: unknown): boolean {
-    if (error instanceof OpenAI.APIError) {
-      return error.status === 429 || (error.status ?? 0) >= 500;
-    }
-    if (error instanceof GeminiApiError) {
-      return error.status === 429 || error.status >= 500;
-    }
-    // Network-level errors (ECONNRESET, ETIMEDOUT, etc.)
-    if (error instanceof Error && "code" in error) {
-      return true;
-    }
-    return false;
   }
 }
 
