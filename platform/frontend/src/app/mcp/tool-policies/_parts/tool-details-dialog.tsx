@@ -1,6 +1,6 @@
 "use client";
 
-import { parseFullToolName } from "@shared";
+import { AGENT_TOOL_PREFIX, isAgentTool, parseFullToolName } from "@shared";
 import { formatDistanceToNow } from "date-fns";
 import {
   ChevronDown,
@@ -72,17 +72,11 @@ export function ToolDetailsDialog({
   const getCredentialDisplay = (
     assignment: (typeof tool.assignments)[0],
   ): string | null => {
-    if (assignment.useDynamicTeamCredential) {
+    if (assignment.credentialResolutionMode === "dynamic") {
       return "Resolve at call time";
     }
 
-    // Get the credential server ID (remote or local)
-    const credentialServerId =
-      assignment.credentialSourceMcpServerId ||
-      assignment.executionSourceMcpServerId;
-
-    // If no credential server, don't show anything
-    if (!credentialServerId) {
+    if (!assignment.mcpServerId) {
       return null;
     }
 
@@ -150,6 +144,28 @@ export function ToolDetailsDialog({
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>{catalogItem?.name || "MCP Server"}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : isAgentTool(tool.name) ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="secondary"
+                            className="bg-violet-600 text-white"
+                          >
+                            Agent
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            Delegates to{" "}
+                            {tool.name
+                              .slice(AGENT_TOOL_PREFIX.length)
+                              .replaceAll("_", " ")}{" "}
+                            agent
+                          </p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>

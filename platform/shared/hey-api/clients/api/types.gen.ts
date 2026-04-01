@@ -10697,7 +10697,7 @@ export type GetAgentsResponses = {
             identityProviderId: string | null;
             builtInAgentConfig: {
                 name: 'policy-configuration-subagent';
-                autoConfigureOnToolAssignment: boolean;
+                autoConfigureOnToolDiscovery: boolean;
             } | {
                 name: 'dual-llm-main-agent';
                 maxRounds: number;
@@ -10789,7 +10789,7 @@ export type CreateAgentData = {
         identityProviderId?: string | null;
         builtInAgentConfig?: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -10898,7 +10898,7 @@ export type CreateAgentResponses = {
         identityProviderId: string | null;
         builtInAgentConfig: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -11069,7 +11069,7 @@ export type GetAllAgentsResponses = {
         identityProviderId: string | null;
         builtInAgentConfig: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -11223,7 +11223,7 @@ export type GetDefaultMcpGatewayResponses = {
         identityProviderId: string | null;
         builtInAgentConfig: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -11377,7 +11377,7 @@ export type GetDefaultLlmProxyResponses = {
         identityProviderId: string | null;
         builtInAgentConfig: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -11612,7 +11612,7 @@ export type GetAgentResponses = {
         identityProviderId: string | null;
         builtInAgentConfig: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -11695,7 +11695,7 @@ export type UpdateAgentData = {
         identityProviderId?: string | null;
         builtInAgentConfig?: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -11806,7 +11806,7 @@ export type UpdateAgentResponses = {
         identityProviderId: string | null;
         builtInAgentConfig: {
             name: 'policy-configuration-subagent';
-            autoConfigureOnToolAssignment: boolean;
+            autoConfigureOnToolDiscovery: boolean;
         } | {
             name: 'dual-llm-main-agent';
             maxRounds: number;
@@ -12195,9 +12195,8 @@ export type GetAllAgentToolsResponses = {
     200: {
         data: Array<{
             id: string;
-            credentialSourceMcpServerId: string | null;
-            executionSourceMcpServerId: string | null;
-            useDynamicTeamCredential: boolean;
+            mcpServerId: string | null;
+            credentialResolutionMode: 'static' | 'dynamic' | 'enterprise_managed';
             createdAt: string;
             updatedAt: string;
             agent: {
@@ -12324,9 +12323,8 @@ export type UnassignToolFromAgentResponse = UnassignToolFromAgentResponses[keyof
 export type AssignToolToAgentData = {
     body: {
         resolveAtCallTime?: boolean;
-        useDynamicTeamCredential?: boolean;
-        credentialSourceMcpServerId?: string | null;
-        executionSourceMcpServerId?: string | null;
+        credentialResolutionMode?: 'static' | 'dynamic' | 'enterprise_managed';
+        mcpServerId?: string | null;
     } | null;
     path: {
         agentId: string;
@@ -12411,9 +12409,8 @@ export type BulkAssignToolsData = {
         assignments: Array<{
             toolId: string;
             resolveAtCallTime?: boolean;
-            useDynamicTeamCredential?: boolean;
-            credentialSourceMcpServerId?: string | null;
-            executionSourceMcpServerId?: string | null;
+            credentialResolutionMode?: 'static' | 'dynamic' | 'enterprise_managed';
+            mcpServerId?: string | null;
             agentId: string;
         }>;
     };
@@ -12582,8 +12579,8 @@ export type AutoConfigureAgentToolPoliciesResponses = {
             toolId: string;
             success: boolean;
             config?: {
-                toolInvocationAction: 'allow_when_context_is_untrusted' | 'block_when_context_is_untrusted' | 'block_always';
-                trustedDataAction: 'mark_as_trusted' | 'mark_as_untrusted' | 'sanitize_with_dual_llm' | 'block_always';
+                toolInvocationAction: 'allow_when_context_is_sensitive' | 'block_when_context_is_sensitive' | 'block_always';
+                trustedDataAction: 'mark_as_safe' | 'mark_as_sensitive' | 'sanitize_with_dual_llm' | 'block_always';
                 reasoning: string;
             };
             error?: string;
@@ -12703,9 +12700,8 @@ export type GetAgentToolsResponse = GetAgentToolsResponses[keyof GetAgentToolsRe
 
 export type UpdateAgentToolData = {
     body: {
-        credentialSourceMcpServerId?: string | null;
-        executionSourceMcpServerId?: string | null;
-        useDynamicTeamCredential?: boolean;
+        mcpServerId?: string | null;
+        credentialResolutionMode?: 'static' | 'dynamic' | 'enterprise_managed';
     };
     path: {
         id: string;
@@ -12781,9 +12777,8 @@ export type UpdateAgentToolResponses = {
         id?: string;
         agentId?: string;
         toolId?: string;
-        credentialSourceMcpServerId?: string | null;
-        executionSourceMcpServerId?: string | null;
-        useDynamicTeamCredential?: boolean;
+        mcpServerId?: string | null;
+        credentialResolutionMode: 'static' | 'dynamic' | 'enterprise_managed';
         createdAt?: string;
         updatedAt?: string;
     };
@@ -15144,17 +15139,20 @@ export type BedrockConverseWithDefaultAgentData = {
                 };
             }>;
             toolChoice?: {
-                auto?: {
-                    [key: string]: unknown;
-                };
-            } | {
-                any?: {
-                    [key: string]: unknown;
-                };
-            } | {
                 tool: {
                     name: string;
                 };
+                [key: string]: unknown;
+            } | {
+                any: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
+            } | {
+                auto: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
             };
         };
         guardrailConfig?: {
@@ -15445,17 +15443,20 @@ export type BedrockConverseWithAgentData = {
                 };
             }>;
             toolChoice?: {
-                auto?: {
-                    [key: string]: unknown;
-                };
-            } | {
-                any?: {
-                    [key: string]: unknown;
-                };
-            } | {
                 tool: {
                     name: string;
                 };
+                [key: string]: unknown;
+            } | {
+                any: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
+            } | {
+                auto: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
             };
         };
         guardrailConfig?: {
@@ -15748,17 +15749,20 @@ export type BedrockConverseStreamWithDefaultAgentData = {
                 };
             }>;
             toolChoice?: {
-                auto?: {
-                    [key: string]: unknown;
-                };
-            } | {
-                any?: {
-                    [key: string]: unknown;
-                };
-            } | {
                 tool: {
                     name: string;
                 };
+                [key: string]: unknown;
+            } | {
+                any: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
+            } | {
+                auto: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
             };
         };
         guardrailConfig?: {
@@ -15930,17 +15934,20 @@ export type BedrockConverseStreamWithAgentData = {
                 };
             }>;
             toolChoice?: {
-                auto?: {
-                    [key: string]: unknown;
-                };
-            } | {
-                any?: {
-                    [key: string]: unknown;
-                };
-            } | {
                 tool: {
                     name: string;
                 };
+                [key: string]: unknown;
+            } | {
+                any: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
+            } | {
+                auto: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
             };
         };
         guardrailConfig?: {
@@ -16114,17 +16121,20 @@ export type BedrockConverseWithAgentAndModelData = {
                 };
             }>;
             toolChoice?: {
-                auto?: {
-                    [key: string]: unknown;
-                };
-            } | {
-                any?: {
-                    [key: string]: unknown;
-                };
-            } | {
                 tool: {
                     name: string;
                 };
+                [key: string]: unknown;
+            } | {
+                any: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
+            } | {
+                auto: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
             };
         };
         guardrailConfig?: {
@@ -16418,17 +16428,20 @@ export type BedrockConverseStreamWithAgentAndModelData = {
                 };
             }>;
             toolChoice?: {
-                auto?: {
-                    [key: string]: unknown;
-                };
-            } | {
-                any?: {
-                    [key: string]: unknown;
-                };
-            } | {
                 tool: {
                     name: string;
                 };
+                [key: string]: unknown;
+            } | {
+                any: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
+            } | {
+                auto: {
+                    [key: string]: unknown;
+                };
+                [key: string]: unknown;
             };
         };
         guardrailConfig?: {
@@ -16902,6 +16915,10 @@ export type GetChatConversationsResponses = {
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
         } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
+        } | null;
         messages: Array<unknown>;
     }>;
 };
@@ -17007,6 +17024,10 @@ export type CreateChatConversationResponses = {
             systemPrompt: string | null;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
+        } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
         } | null;
         messages: Array<unknown>;
     };
@@ -17189,6 +17210,10 @@ export type GetChatConversationResponses = {
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
         } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
+        } | null;
         messages: Array<unknown>;
     };
 };
@@ -17298,6 +17323,10 @@ export type UpdateChatConversationResponses = {
             systemPrompt: string | null;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
+        } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
         } | null;
         messages: Array<unknown>;
     };
@@ -17544,8 +17573,10 @@ export type GetConversationShareResponses = {
         conversationId: string;
         organizationId: string;
         createdByUserId: string;
-        visibility: 'organization';
+        visibility: 'organization' | 'team' | 'user';
         createdAt: string;
+        teamIds: Array<string>;
+        userIds: Array<string>;
     } | null;
 };
 
@@ -17553,7 +17584,9 @@ export type GetConversationShareResponse = GetConversationShareResponses[keyof G
 
 export type ShareConversationData = {
     body: {
-        visibility: 'organization';
+        visibility: 'organization' | 'team' | 'user';
+        teamIds?: Array<string>;
+        userIds?: Array<string>;
     };
     path: {
         id: string;
@@ -17630,8 +17663,10 @@ export type ShareConversationResponses = {
         conversationId: string;
         organizationId: string;
         createdByUserId: string;
-        visibility: 'organization';
+        visibility: 'organization' | 'team' | 'user';
         createdAt: string;
+        teamIds: Array<string>;
+        userIds: Array<string>;
     };
 };
 
@@ -17732,6 +17767,10 @@ export type GetSharedConversationResponses = {
             systemPrompt: string | null;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
+        } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
         } | null;
         messages: Array<unknown>;
         sharedByUserId: string;
@@ -17837,6 +17876,10 @@ export type ForkSharedConversationResponses = {
             systemPrompt: string | null;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
+        } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
         } | null;
         messages: Array<unknown>;
     };
@@ -17945,6 +17988,10 @@ export type GenerateChatConversationTitleResponses = {
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
         } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
+        } | null;
         messages: Array<unknown>;
     };
 };
@@ -18050,6 +18097,10 @@ export type UpdateChatMessageResponses = {
             systemPrompt: string | null;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             llmApiKeyId: string | null;
+        } | null;
+        share: {
+            id: string;
+            visibility: 'organization' | 'team' | 'user';
         } | null;
         messages: Array<unknown>;
     };
@@ -21096,17 +21147,20 @@ export type GetInteractionsResponses = {
                         };
                     }>;
                     toolChoice?: {
-                        auto?: {
-                            [key: string]: never;
-                        };
-                    } | {
-                        any?: {
-                            [key: string]: never;
-                        };
-                    } | {
                         tool: {
                             name: string;
                         };
+                        [key: string]: unknown;
+                    } | {
+                        any: {
+                            [key: string]: unknown;
+                        };
+                        [key: string]: unknown;
+                    } | {
+                        auto: {
+                            [key: string]: unknown;
+                        };
+                        [key: string]: unknown;
                     };
                 };
                 guardrailConfig?: {
@@ -21252,17 +21306,20 @@ export type GetInteractionsResponses = {
                         };
                     }>;
                     toolChoice?: {
-                        auto?: {
-                            [key: string]: never;
-                        };
-                    } | {
-                        any?: {
-                            [key: string]: never;
-                        };
-                    } | {
                         tool: {
                             name: string;
                         };
+                        [key: string]: unknown;
+                    } | {
+                        any: {
+                            [key: string]: unknown;
+                        };
+                        [key: string]: unknown;
+                    } | {
+                        auto: {
+                            [key: string]: unknown;
+                        };
+                        [key: string]: unknown;
                     };
                 };
                 guardrailConfig?: {
@@ -22445,17 +22502,20 @@ export type GetInteractionResponses = {
                     };
                 }>;
                 toolChoice?: {
-                    auto?: {
-                        [key: string]: never;
-                    };
-                } | {
-                    any?: {
-                        [key: string]: never;
-                    };
-                } | {
                     tool: {
                         name: string;
                     };
+                    [key: string]: unknown;
+                } | {
+                    any: {
+                        [key: string]: unknown;
+                    };
+                    [key: string]: unknown;
+                } | {
+                    auto: {
+                        [key: string]: unknown;
+                    };
+                    [key: string]: unknown;
                 };
             };
             guardrailConfig?: {
@@ -22601,17 +22661,20 @@ export type GetInteractionResponses = {
                     };
                 }>;
                 toolChoice?: {
-                    auto?: {
-                        [key: string]: never;
-                    };
-                } | {
-                    any?: {
-                        [key: string]: never;
-                    };
-                } | {
                     tool: {
                         name: string;
                     };
+                    [key: string]: unknown;
+                } | {
+                    any: {
+                        [key: string]: unknown;
+                    };
+                    [key: string]: unknown;
+                } | {
+                    auto: {
+                        [key: string]: unknown;
+                    };
+                    [key: string]: unknown;
                 };
             };
             guardrailConfig?: {
@@ -23296,6 +23359,23 @@ export type GetInternalMcpCatalogResponses = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        enterpriseManagedConfig: {
+            identityProviderId?: string;
+            resourceType?: 'mcp' | 'oauth_protected_resource' | 'secret' | 'service_account' | 'custom_http';
+            resourceIdentifier?: string;
+            requestedIssuer?: string;
+            requestedCredentialType?: 'id_jag' | 'bearer_token' | 'secret' | 'service_account' | 'opaque_json';
+            scopes?: Array<string>;
+            audience?: string;
+            clientIdOverride?: string;
+            tokenInjectionMode?: 'authorization_bearer' | 'raw_authorization' | 'header' | 'env' | 'body_field';
+            headerName?: string;
+            envVarName?: string;
+            bodyFieldName?: string;
+            responseFieldPath?: string;
+            fallbackMode?: 'fail_closed' | 'fallback_to_dynamic' | 'fallback_to_static';
+            cacheTtlSeconds?: number;
+        } | null;
         icon: string | null;
         organizationId: string | null;
         authorId: string | null;
@@ -23409,6 +23489,23 @@ export type CreateInternalMcpCatalogItemData = {
             browser_auth?: boolean;
             streamable_http_url?: string;
             streamable_http_port?: number;
+        } | null;
+        enterpriseManagedConfig?: {
+            identityProviderId?: string;
+            resourceType?: 'mcp' | 'oauth_protected_resource' | 'secret' | 'service_account' | 'custom_http';
+            resourceIdentifier?: string;
+            requestedIssuer?: string;
+            requestedCredentialType?: 'id_jag' | 'bearer_token' | 'secret' | 'service_account' | 'opaque_json';
+            scopes?: Array<string>;
+            audience?: string;
+            clientIdOverride?: string;
+            tokenInjectionMode?: 'authorization_bearer' | 'raw_authorization' | 'header' | 'env' | 'body_field';
+            headerName?: string;
+            envVarName?: string;
+            bodyFieldName?: string;
+            responseFieldPath?: string;
+            fallbackMode?: 'fail_closed' | 'fallback_to_dynamic' | 'fallback_to_static';
+            cacheTtlSeconds?: number;
         } | null;
         icon?: string | null;
         scope?: 'personal' | 'team' | 'org';
@@ -23582,6 +23679,23 @@ export type CreateInternalMcpCatalogItemResponses = {
             browser_auth?: boolean;
             streamable_http_url?: string;
             streamable_http_port?: number;
+        } | null;
+        enterpriseManagedConfig: {
+            identityProviderId?: string;
+            resourceType?: 'mcp' | 'oauth_protected_resource' | 'secret' | 'service_account' | 'custom_http';
+            resourceIdentifier?: string;
+            requestedIssuer?: string;
+            requestedCredentialType?: 'id_jag' | 'bearer_token' | 'secret' | 'service_account' | 'opaque_json';
+            scopes?: Array<string>;
+            audience?: string;
+            clientIdOverride?: string;
+            tokenInjectionMode?: 'authorization_bearer' | 'raw_authorization' | 'header' | 'env' | 'body_field';
+            headerName?: string;
+            envVarName?: string;
+            bodyFieldName?: string;
+            responseFieldPath?: string;
+            fallbackMode?: 'fail_closed' | 'fallback_to_dynamic' | 'fallback_to_static';
+            cacheTtlSeconds?: number;
         } | null;
         icon: string | null;
         organizationId: string | null;
@@ -23847,6 +23961,23 @@ export type GetInternalMcpCatalogItemResponses = {
             streamable_http_url?: string;
             streamable_http_port?: number;
         } | null;
+        enterpriseManagedConfig: {
+            identityProviderId?: string;
+            resourceType?: 'mcp' | 'oauth_protected_resource' | 'secret' | 'service_account' | 'custom_http';
+            resourceIdentifier?: string;
+            requestedIssuer?: string;
+            requestedCredentialType?: 'id_jag' | 'bearer_token' | 'secret' | 'service_account' | 'opaque_json';
+            scopes?: Array<string>;
+            audience?: string;
+            clientIdOverride?: string;
+            tokenInjectionMode?: 'authorization_bearer' | 'raw_authorization' | 'header' | 'env' | 'body_field';
+            headerName?: string;
+            envVarName?: string;
+            bodyFieldName?: string;
+            responseFieldPath?: string;
+            fallbackMode?: 'fail_closed' | 'fallback_to_dynamic' | 'fallback_to_static';
+            cacheTtlSeconds?: number;
+        } | null;
         icon: string | null;
         organizationId: string | null;
         authorId: string | null;
@@ -23959,6 +24090,23 @@ export type UpdateInternalMcpCatalogItemData = {
             browser_auth?: boolean;
             streamable_http_url?: string;
             streamable_http_port?: number;
+        } | null;
+        enterpriseManagedConfig?: {
+            identityProviderId?: string;
+            resourceType?: 'mcp' | 'oauth_protected_resource' | 'secret' | 'service_account' | 'custom_http';
+            resourceIdentifier?: string;
+            requestedIssuer?: string;
+            requestedCredentialType?: 'id_jag' | 'bearer_token' | 'secret' | 'service_account' | 'opaque_json';
+            scopes?: Array<string>;
+            audience?: string;
+            clientIdOverride?: string;
+            tokenInjectionMode?: 'authorization_bearer' | 'raw_authorization' | 'header' | 'env' | 'body_field';
+            headerName?: string;
+            envVarName?: string;
+            bodyFieldName?: string;
+            responseFieldPath?: string;
+            fallbackMode?: 'fail_closed' | 'fallback_to_dynamic' | 'fallback_to_static';
+            cacheTtlSeconds?: number;
         } | null;
         icon?: string | null;
         scope?: 'personal' | 'team' | 'org';
@@ -24134,6 +24282,23 @@ export type UpdateInternalMcpCatalogItemResponses = {
             browser_auth?: boolean;
             streamable_http_url?: string;
             streamable_http_port?: number;
+        } | null;
+        enterpriseManagedConfig: {
+            identityProviderId?: string;
+            resourceType?: 'mcp' | 'oauth_protected_resource' | 'secret' | 'service_account' | 'custom_http';
+            resourceIdentifier?: string;
+            requestedIssuer?: string;
+            requestedCredentialType?: 'id_jag' | 'bearer_token' | 'secret' | 'service_account' | 'opaque_json';
+            scopes?: Array<string>;
+            audience?: string;
+            clientIdOverride?: string;
+            tokenInjectionMode?: 'authorization_bearer' | 'raw_authorization' | 'header' | 'env' | 'body_field';
+            headerName?: string;
+            envVarName?: string;
+            bodyFieldName?: string;
+            responseFieldPath?: string;
+            fallbackMode?: 'fail_closed' | 'fallback_to_dynamic' | 'fallback_to_static';
+            cacheTtlSeconds?: number;
         } | null;
         icon: string | null;
         organizationId: string | null;
@@ -27388,6 +27553,7 @@ export type GetLlmModelsData = {
     query?: {
         provider?: 'openai' | 'gemini' | 'anthropic' | 'bedrock' | 'cohere' | 'cerebras' | 'mistral' | 'perplexity' | 'groq' | 'xai' | 'openrouter' | 'vllm' | 'ollama' | 'zhipuai' | 'deepseek' | 'minimax';
         apiKeyId?: string;
+        isEmbedding?: string;
     };
     url: '/api/llm-models/available';
 };
@@ -27472,6 +27638,7 @@ export type GetLlmModelsResponses = {
         };
         isBest?: boolean;
         isFastest?: boolean;
+        embeddingDimensions?: 3072 | 1536 | 768 | null;
     }>;
 };
 
@@ -27639,6 +27806,7 @@ export type GetModelsWithApiKeysResponses = {
         customPricePerMillionInput: string | null;
         customPricePerMillionOutput: string | null;
         ignored: boolean;
+        embeddingDimensions: 3072 | 1536 | 768 | null;
         discoveredViaLlmProxy: boolean;
         lastSyncedAt: string;
         createdAt: string;
@@ -27666,6 +27834,7 @@ export type UpdateModelData = {
         customPricePerMillionInput?: string | null;
         customPricePerMillionOutput?: string | null;
         ignored?: boolean;
+        embeddingDimensions?: 3072 | 1536 | 768 | null;
         inputModalities?: Array<'text' | 'image' | 'audio' | 'video' | 'pdf'> | null;
         outputModalities?: Array<'text' | 'image' | 'audio'> | null;
     };
@@ -27754,6 +27923,7 @@ export type UpdateModelResponses = {
         customPricePerMillionInput: string | null;
         customPricePerMillionOutput: string | null;
         ignored: boolean;
+        embeddingDimensions: 3072 | 1536 | 768 | null;
         discoveredViaLlmProxy: boolean;
         lastSyncedAt: string;
         createdAt: string;
@@ -33681,8 +33851,7 @@ export type UpdateAgentSettingsResponse = UpdateAgentSettingsResponses[keyof Upd
 
 export type UpdateKnowledgeSettingsData = {
     body: {
-        embeddingModel?: string;
-        embeddingDimensions?: 1536 | 768;
+        embeddingModel?: string | null;
         embeddingChatApiKeyId?: string | null;
         rerankerChatApiKeyId?: string | null;
         rerankerModel?: string | null;
@@ -36729,7 +36898,7 @@ export type GetToolsWithAssignmentsData = {
         sortDirection?: 'asc' | 'desc';
         search?: string;
         /**
-         * Can be 'llm-proxy' or a catalogId
+         * Can be 'llm-proxy', 'agent', or a catalogId
          */
         origin?: string;
         /**
@@ -36838,11 +37007,10 @@ export type GetToolsWithAssignmentsResponses = {
                     id: string;
                     name: string;
                 };
-                credentialSourceMcpServerId: string | null;
+                mcpServerId: string | null;
                 credentialOwnerEmail: string | null;
-                executionSourceMcpServerId: string | null;
                 executionOwnerEmail: string | null;
-                useDynamicTeamCredential: boolean;
+                credentialResolutionMode: 'static' | 'dynamic' | 'enterprise_managed';
             }>;
         }>;
         pagination: {
@@ -38413,8 +38581,19 @@ export type GetIdentityProvidersResponses = {
             scopes?: Array<string>;
             overrideUserInfo?: boolean;
             tokenEndpoint?: string;
-            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic';
+            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
             jwksEndpoint?: string;
+            enterpriseManagedCredentials?: {
+                providerType?: 'generic_oidc' | 'okta' | 'keycloak';
+                clientId?: string;
+                clientSecret?: string;
+                tokenEndpoint?: string;
+                tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
+                privateKeyPem?: string;
+                privateKeyId?: string;
+                clientAssertionAudience?: string;
+                subjectTokenType?: 'urn:ietf:params:oauth:token-type:access_token' | 'urn:ietf:params:oauth:token-type:id_token' | 'urn:ietf:params:oauth:token-type:jwt';
+            };
             /**
              * https://github.com/better-auth/better-auth/blob/v1.4.0/packages/sso/src/types.ts#L3
              */
@@ -38529,8 +38708,19 @@ export type CreateIdentityProviderData = {
             scopes?: Array<string>;
             overrideUserInfo?: boolean;
             tokenEndpoint?: string;
-            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic';
+            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
             jwksEndpoint?: string;
+            enterpriseManagedCredentials?: {
+                providerType?: 'generic_oidc' | 'okta' | 'keycloak';
+                clientId?: string;
+                clientSecret?: string;
+                tokenEndpoint?: string;
+                tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
+                privateKeyPem?: string;
+                privateKeyId?: string;
+                clientAssertionAudience?: string;
+                subjectTokenType?: 'urn:ietf:params:oauth:token-type:access_token' | 'urn:ietf:params:oauth:token-type:id_token' | 'urn:ietf:params:oauth:token-type:jwt';
+            };
             /**
              * https://github.com/better-auth/better-auth/blob/v1.4.0/packages/sso/src/types.ts#L3
              */
@@ -38708,8 +38898,19 @@ export type CreateIdentityProviderResponses = {
             scopes?: Array<string>;
             overrideUserInfo?: boolean;
             tokenEndpoint?: string;
-            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic';
+            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
             jwksEndpoint?: string;
+            enterpriseManagedCredentials?: {
+                providerType?: 'generic_oidc' | 'okta' | 'keycloak';
+                clientId?: string;
+                clientSecret?: string;
+                tokenEndpoint?: string;
+                tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
+                privateKeyPem?: string;
+                privateKeyId?: string;
+                clientAssertionAudience?: string;
+                subjectTokenType?: 'urn:ietf:params:oauth:token-type:access_token' | 'urn:ietf:params:oauth:token-type:id_token' | 'urn:ietf:params:oauth:token-type:jwt';
+            };
             /**
              * https://github.com/better-auth/better-auth/blob/v1.4.0/packages/sso/src/types.ts#L3
              */
@@ -39052,8 +39253,19 @@ export type GetIdentityProviderResponses = {
             scopes?: Array<string>;
             overrideUserInfo?: boolean;
             tokenEndpoint?: string;
-            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic';
+            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
             jwksEndpoint?: string;
+            enterpriseManagedCredentials?: {
+                providerType?: 'generic_oidc' | 'okta' | 'keycloak';
+                clientId?: string;
+                clientSecret?: string;
+                tokenEndpoint?: string;
+                tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
+                privateKeyPem?: string;
+                privateKeyId?: string;
+                clientAssertionAudience?: string;
+                subjectTokenType?: 'urn:ietf:params:oauth:token-type:access_token' | 'urn:ietf:params:oauth:token-type:id_token' | 'urn:ietf:params:oauth:token-type:jwt';
+            };
             /**
              * https://github.com/better-auth/better-auth/blob/v1.4.0/packages/sso/src/types.ts#L3
              */
@@ -39168,8 +39380,19 @@ export type UpdateIdentityProviderData = {
             scopes?: Array<string>;
             overrideUserInfo?: boolean;
             tokenEndpoint?: string;
-            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic';
+            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
             jwksEndpoint?: string;
+            enterpriseManagedCredentials?: {
+                providerType?: 'generic_oidc' | 'okta' | 'keycloak';
+                clientId?: string;
+                clientSecret?: string;
+                tokenEndpoint?: string;
+                tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
+                privateKeyPem?: string;
+                privateKeyId?: string;
+                clientAssertionAudience?: string;
+                subjectTokenType?: 'urn:ietf:params:oauth:token-type:access_token' | 'urn:ietf:params:oauth:token-type:id_token' | 'urn:ietf:params:oauth:token-type:jwt';
+            };
             /**
              * https://github.com/better-auth/better-auth/blob/v1.4.0/packages/sso/src/types.ts#L3
              */
@@ -39348,8 +39571,19 @@ export type UpdateIdentityProviderResponses = {
             scopes?: Array<string>;
             overrideUserInfo?: boolean;
             tokenEndpoint?: string;
-            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic';
+            tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
             jwksEndpoint?: string;
+            enterpriseManagedCredentials?: {
+                providerType?: 'generic_oidc' | 'okta' | 'keycloak';
+                clientId?: string;
+                clientSecret?: string;
+                tokenEndpoint?: string;
+                tokenEndpointAuthentication?: 'client_secret_post' | 'client_secret_basic' | 'private_key_jwt';
+                privateKeyPem?: string;
+                privateKeyId?: string;
+                clientAssertionAudience?: string;
+                subjectTokenType?: 'urn:ietf:params:oauth:token-type:access_token' | 'urn:ietf:params:oauth:token-type:id_token' | 'urn:ietf:params:oauth:token-type:jwt';
+            };
             /**
              * https://github.com/better-auth/better-auth/blob/v1.4.0/packages/sso/src/types.ts#L3
              */
