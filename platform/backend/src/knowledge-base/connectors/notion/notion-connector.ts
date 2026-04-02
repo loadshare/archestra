@@ -497,35 +497,51 @@ export class NotionConnector extends BaseConnector {
   ): Promise<string> {
     if (depth >= MAX_BLOCK_DEPTH) return "";
 
-    const response = await this.fetchWithRetry(
-      `${NOTION_API_BASE}/blocks/${blockId}/children?page_size=100`,
-      { headers: buildHeaders(credentials) },
-    );
-
-    if (!response.ok) return "";
-
-    const result = (await response.json()) as ListBlockChildrenResponse;
-    const blocks = result.results;
-
     const parts: string[] = [];
+    let cursor: string | undefined;
+    let hasMore = true;
 
-    for (const block of blocks) {
-      const text = extractBlockText(block);
-      if (text) parts.push(text);
+    while (hasMore) {
+      await this.rateLimit();
 
-      if (
-        block.object === "block" &&
-        "has_children" in block &&
-        block.has_children &&
-        depth < MAX_BLOCK_DEPTH - 1
-      ) {
-        const childContent = await this.fetchPageContent(
-          block.id,
-          credentials,
-          depth + 1,
+      const url = cursor
+        ? `${NOTION_API_BASE}/blocks/${blockId}/children?page_size=100&start_cursor=${cursor}`
+        : `${NOTION_API_BASE}/blocks/${blockId}/children?page_size=100`;
+
+      const response = await this.fetchWithRetry(url, {
+        headers: buildHeaders(credentials),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+          `Failed to fetch blocks for ${blockId}: HTTP ${response.status}: ${body.slice(0, 200)}`,
         );
-        if (childContent) parts.push(childContent);
       }
+
+      const result = (await response.json()) as ListBlockChildrenResponse;
+
+      for (const block of result.results) {
+        const text = extractBlockText(block);
+        if (text) parts.push(text);
+
+        if (
+          block.object === "block" &&
+          "has_children" in block &&
+          block.has_children &&
+          depth < MAX_BLOCK_DEPTH - 1
+        ) {
+          const childContent = await this.fetchPageContent(
+            block.id,
+            credentials,
+            depth + 1,
+          );
+          if (childContent) parts.push(childContent);
+        }
+      }
+
+      cursor = result.next_cursor ?? undefined;
+      hasMore = result.has_more === true && !!cursor;
     }
 
     return parts.join("\n");
