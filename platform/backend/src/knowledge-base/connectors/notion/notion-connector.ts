@@ -175,18 +175,17 @@ export class NotionConnector extends BaseConnector {
             const page = await this.fetchPage(pageId, credentials);
             if (!page) return null;
 
-            // Skip block content if the page has not been edited since the
-            // last sync.  We still upsert the document with its current
-            // metadata so deletions / title changes are reflected.
+            // Skip pages that haven't changed since the last sync entirely.
+            // Returning null avoids re-indexing the page with only its title
+            // (no body), which would overwrite the previously-stored full
+            // content in the knowledge base.
             const isUnchanged =
               safetyBufferedSyncFrom &&
               page.last_edited_time <= safetyBufferedSyncFrom;
+            if (isUnchanged) return null;
 
-            const content = isUnchanged
-              ? undefined
-              : await this.fetchPageContent(pageId, credentials);
-
-            return pageToDocument(page, content ?? "");
+            const content = await this.fetchPageContent(pageId, credentials);
+            return pageToDocument(page, content);
           },
           fallback: null,
           itemId: pageId,
@@ -304,16 +303,16 @@ export class NotionConnector extends BaseConnector {
           if (item.object !== "page" || !isFullPageObject(item)) continue;
 
           const pageId = item.id;
-          try {
-            const content = await this.fetchPageContent(pageId, credentials);
-            documents.push(pageToDocument(item, content));
-          } catch (error) {
-            this.log.warn(
-              { pageId, error: extractErrorMessage(error) },
-              "Failed to fetch page content, using metadata only",
-            );
-            documents.push(pageToDocument(item, ""));
-          }
+          const doc = await this.safeItemFetch({
+            fetch: async () => {
+              const content = await this.fetchPageContent(pageId, credentials);
+              return pageToDocument(item, content);
+            },
+            fallback: null,
+            itemId: pageId,
+            resource: "page",
+          });
+          if (doc) documents.push(doc);
         }
 
         cursor = result.next_cursor ?? undefined;
@@ -417,16 +416,16 @@ export class NotionConnector extends BaseConnector {
           }
 
           const pageId = item.id;
-          try {
-            const content = await this.fetchPageContent(pageId, credentials);
-            documents.push(pageToDocument(item, content));
-          } catch (error) {
-            this.log.warn(
-              { pageId, error: extractErrorMessage(error) },
-              "Failed to fetch page content, using metadata only",
-            );
-            documents.push(pageToDocument(item, ""));
-          }
+          const doc = await this.safeItemFetch({
+            fetch: async () => {
+              const content = await this.fetchPageContent(pageId, credentials);
+              return pageToDocument(item, content);
+            },
+            fallback: null,
+            itemId: pageId,
+            resource: "page",
+          });
+          if (doc) documents.push(doc);
         }
 
         cursor = result.next_cursor ?? undefined;

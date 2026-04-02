@@ -828,10 +828,9 @@ describe("NotionConnector", () => {
         lastEditedTime: "2024-01-20T00:00:00.000Z",
       });
 
-      // page fetches for both (metadata always fetched)
+      // page fetches for both, blocks only for new-page
       fetchMock.mockResolvedValueOnce(makePageResponse(oldPage));
       fetchMock.mockResolvedValueOnce(makePageResponse(newPage));
-      // blocks only for new-page (old-page content is skipped)
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["New content"]));
 
       const batches: ConnectorSyncBatch[] = [];
@@ -843,10 +842,10 @@ describe("NotionConnector", () => {
         batches.push(batch);
       }
 
-      // Both pages returned (metadata still upserted), but only new-page has content
-      expect(batches[0].documents).toHaveLength(2);
-      expect(batches[0].documents[0].content).toBe("# Unchanged"); // no body
-      expect(batches[0].documents[1].content).toContain("New content");
+      // Unchanged page is skipped entirely to avoid overwriting stored content
+      // with a title-only document. Only the changed page is returned.
+      expect(batches[0].documents).toHaveLength(1);
+      expect(batches[0].documents[0].content).toContain("New content");
       // fetchWithRetry: 2 page fetches + 1 blocks fetch = 3 total
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
