@@ -1,5 +1,5 @@
-ALTER TABLE "kb_chunks" ADD COLUMN "embedding_3072" vector(3072);--> statement-breakpoint
-ALTER TABLE "models" ADD COLUMN "embedding_dimensions" integer;--> statement-breakpoint
+ALTER TABLE "kb_chunks" ADD COLUMN IF NOT EXISTS "embedding_3072" vector(3072);--> statement-breakpoint
+ALTER TABLE "models" ADD COLUMN IF NOT EXISTS "embedding_dimensions" integer;--> statement-breakpoint
 
 UPDATE "models"
 SET "embedding_dimensions" = CASE
