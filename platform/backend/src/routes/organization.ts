@@ -1,17 +1,14 @@
 import {
   AUTO_PROVISIONED_INVITATION_STATUS,
   addNomicTaskPrefix,
-  EMBEDDING_COMPATIBLE_PROVIDERS,
-  getEmbeddingDimensions,
   RouteId,
 } from "@shared";
 import { and, eq, inArray, like } from "drizzle-orm";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import OpenAI from "openai";
 import { z } from "zod";
 import config from "@/config";
 import db, { schema } from "@/database";
-import { callGeminiBatchEmbed } from "@/knowledge-base/gemini-embedding-client";
+import { callEmbedding } from "@/knowledge-base/embedding-clients";
 import { resolveApiKeyFromChatApiKey } from "@/knowledge-base/kb-llm-client";
 import logger from "@/logging";
 import {
@@ -23,6 +20,7 @@ import {
   LlmProviderApiKeyModel,
   McpToolCallModel,
   MemberModel,
+  ModelModel,
   OrganizationModel,
   ToolModel,
   UserModel,
@@ -205,9 +203,10 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async ({ organizationId, body }, reply) => {
+      const currentOrg = await OrganizationModel.getById(organizationId);
+
       // Embedding model is locked once both key and model have been saved
       if (body.embeddingModel) {
-        const currentOrg = await OrganizationModel.getById(organizationId);
         if (
           currentOrg?.embeddingChatApiKeyId &&
           currentOrg?.embeddingModel &&
@@ -220,7 +219,7 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }
       }
 
-      // Validate embedding API key uses an embedding-compatible provider
+      // Validate embedding API key exists
       if (body.embeddingChatApiKeyId) {
         const chatApiKey = await LlmProviderApiKeyModel.findById(
           body.embeddingChatApiKeyId,
@@ -228,10 +227,37 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
         if (!chatApiKey) {
           throw new ApiError(404, "Embedding API key not found");
         }
-        if (!EMBEDDING_COMPATIBLE_PROVIDERS.has(chatApiKey.provider)) {
+      }
+
+      const shouldValidateEmbeddingSelection =
+        body.embeddingChatApiKeyId !== undefined ||
+        body.embeddingModel !== undefined;
+      const effectiveEmbeddingKeyId =
+        body.embeddingChatApiKeyId ?? currentOrg?.embeddingChatApiKeyId ?? null;
+      const effectiveEmbeddingModel =
+        body.embeddingModel ?? currentOrg?.embeddingModel ?? null;
+
+      if (
+        shouldValidateEmbeddingSelection &&
+        effectiveEmbeddingKeyId &&
+        effectiveEmbeddingModel
+      ) {
+        const resolved = await resolveApiKeyFromChatApiKey(
+          effectiveEmbeddingKeyId,
+        );
+        if (!resolved) {
+          throw new ApiError(400, "Could not resolve embedding API key");
+        }
+
+        const model = await ModelModel.findByProviderAndModelId(
+          resolved.provider,
+          effectiveEmbeddingModel,
+        );
+
+        if (model?.embeddingDimensions === null || !model) {
           throw new ApiError(
             400,
-            "Embedding API key must use a compatible provider (OpenAI, Ollama, or Gemini)",
+            "Embedding model must be marked as an embedding model with configured dimensions in LLM Providers > Models.",
           );
         }
       }
@@ -308,18 +334,12 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async ({ body }, reply) => {
-      // Validate API key exists and uses an embedding-compatible provider
+      // Validate API key exists
       const chatApiKey = await LlmProviderApiKeyModel.findById(
         body.embeddingChatApiKeyId,
       );
       if (!chatApiKey) {
         throw new ApiError(404, "API key not found");
-      }
-      if (!EMBEDDING_COMPATIBLE_PROVIDERS.has(chatApiKey.provider)) {
-        throw new ApiError(
-          400,
-          "Embedding API key must use a compatible provider (OpenAI, Ollama, or Gemini)",
-        );
       }
 
       // Resolve the actual secret
@@ -333,40 +353,35 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
         });
       }
 
+      const model = await ModelModel.findByProviderAndModelId(
+        resolved.provider,
+        body.embeddingModel,
+      );
+      if (!model?.embeddingDimensions) {
+        return reply.send({
+          success: false,
+          error:
+            "Embedding model must be marked as an embedding model with configured dimensions in LLM Providers > Models.",
+        });
+      }
+
       try {
-        let embeddingCount = 0;
+        const response = await callEmbedding({
+          texts: [
+            addNomicTaskPrefix(
+              body.embeddingModel,
+              "hello world",
+              "search_document",
+            ),
+          ],
+          model: body.embeddingModel,
+          apiKey: resolved.apiKey,
+          baseUrl: resolved.baseUrl,
+          dimensions: model.embeddingDimensions,
+          provider: resolved.provider,
+        });
 
-        if (resolved.provider === "gemini") {
-          const response = await callGeminiBatchEmbed({
-            texts: ["hello world"],
-            model: body.embeddingModel,
-            apiKey: resolved.apiKey,
-            baseUrl: resolved.baseUrl,
-          });
-          embeddingCount = response.data.length;
-        } else {
-          const client = new OpenAI({
-            apiKey: resolved.apiKey,
-            baseURL: resolved.baseUrl ?? undefined,
-          });
-
-          const response = await client.embeddings.create({
-            model: body.embeddingModel,
-            input: [
-              addNomicTaskPrefix(
-                body.embeddingModel,
-                "hello world",
-                "search_document",
-              ),
-            ],
-            ...(body.embeddingModel.includes("nomic")
-              ? {}
-              : { dimensions: getEmbeddingDimensions(body.embeddingModel) }),
-          });
-          embeddingCount = response.data.length;
-        }
-
-        if (embeddingCount > 0) {
+        if (response.data.length > 0) {
           return reply.send({ success: true });
         }
 
@@ -376,7 +391,10 @@ const organizationRoutes: FastifyPluginAsyncZod = async (fastify) => {
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
-        logger.error({ err }, "[testEmbeddingConnection] embedding call failed");
+        logger.error(
+          { err },
+          "[testEmbeddingConnection] embedding call failed",
+        );
         return reply.send({ success: false, error: message });
       }
     },

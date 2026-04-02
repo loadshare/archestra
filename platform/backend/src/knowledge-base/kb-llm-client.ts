@@ -1,18 +1,17 @@
 import type { EmbeddingModel, SupportedProvider } from "@shared";
-import { DEFAULT_PROVIDER_BASE_URLS, getEmbeddingDimensions } from "@shared";
-import OpenAI from "openai";
+import { DEFAULT_PROVIDER_BASE_URLS } from "@shared";
 import { createDirectLLMModel, type LLMModel } from "@/clients/llm-client";
 import logger from "@/logging";
-import { LlmProviderApiKeyModel, OrganizationModel } from "@/models";
+import {
+  LlmProviderApiKeyModel,
+  ModelModel,
+  OrganizationModel,
+} from "@/models";
 import { getSecretValueForLlmProviderApiKey } from "@/secrets-manager";
 
 export interface EmbeddingConfig {
-  /** OpenAI SDK client. null for Gemini, which uses its own HTTP client. */
-  client: OpenAI | null;
-  /** Gemini API key — only set when provider is "gemini". */
-  geminiApiKey?: string;
-  /** Gemini base URL override — only set when provider is "gemini". */
-  geminiBaseUrl?: string | null;
+  apiKey: string;
+  baseUrl: string | null;
   model: EmbeddingModel;
   dimensions: number;
   provider: SupportedProvider;
@@ -45,26 +44,20 @@ export async function resolveEmbeddingConfig(
     return null;
   }
 
-  if (resolved.provider === "gemini") {
-    return {
-      client: null,
-      geminiApiKey: resolved.apiKey,
-      geminiBaseUrl: resolved.baseUrl,
-      model: org.embeddingModel,
-      dimensions:
-        org.embeddingDimensions ?? getEmbeddingDimensions(org.embeddingModel),
-      provider: "gemini",
-    };
-  }
+  const model = await ModelModel.findByProviderAndModelId(
+    resolved.provider,
+    org.embeddingModel,
+  );
 
   return {
-    client: new OpenAI({
-      apiKey: resolved.apiKey,
-      baseURL: resolved.baseUrl ?? undefined,
-    }),
+    apiKey: resolved.apiKey,
+    baseUrl: resolved.baseUrl,
     model: org.embeddingModel,
-    dimensions:
-      org.embeddingDimensions ?? getEmbeddingDimensions(org.embeddingModel),
+    /**
+     * TODO: Temporary transition. Prefer per-model dimensions. Fall back to the deprecated org-level
+     * setting during the rollout, then to the historical 1536 default.
+     */
+    dimensions: model?.embeddingDimensions ?? org.embeddingDimensions ?? 1536,
     provider: resolved.provider,
   };
 }

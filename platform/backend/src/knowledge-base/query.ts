@@ -5,12 +5,12 @@ import { KbChunkModel } from "@/models";
 import type { VectorSearchResult } from "@/models/kb-chunk";
 import * as metrics from "@/observability/metrics";
 import type { AclEntry } from "@/types";
+import { callEmbedding, getEmbeddingDiscriminator } from "./embedding-clients";
 import {
   buildEmbeddingInteraction,
   withKbObservability,
 } from "./kb-interaction";
-import { callGeminiBatchEmbed } from "./gemini-embedding-client";
-import { resolveEmbeddingConfig, type EmbeddingConfig } from "./kb-llm-client";
+import { type EmbeddingConfig, resolveEmbeddingConfig } from "./kb-llm-client";
 import {
   expandQuery,
   KEYWORD_QUERY_HYBRID_ALPHA_WEIGHT,
@@ -30,7 +30,6 @@ interface ChunkResult {
     connectorType: string | null;
   };
 }
-
 
 class QueryService {
   async query(params: {
@@ -137,35 +136,27 @@ class QueryService {
       "[QueryService] Searching expanded query",
     );
 
-    const isGemini = embeddingConfig.provider === "gemini";
     const embeddingResponse = await withKbObservability({
       operationName: "embedding",
-      provider: isGemini ? "gemini" : "openai",
+      provider: embeddingConfig.provider,
       model: embeddingConfig.model,
       source: "knowledge:embedding",
-      type: isGemini ? "gemini:embeddings" : "openai:embeddings",
-      callback: () => {
-        if (isGemini) {
-          return callGeminiBatchEmbed({
-            texts: [queryText],
-            model: embeddingConfig.model,
-            apiKey: embeddingConfig.geminiApiKey ?? "",
-            baseUrl: embeddingConfig.geminiBaseUrl,
-            dimensions: embeddingConfig.dimensions,
-          });
-        }
-        return embeddingConfig.client!.embeddings.create({
+      type: getEmbeddingDiscriminator(embeddingConfig.provider),
+      callback: () =>
+        callEmbedding({
+          texts: [
+            addNomicTaskPrefix(
+              embeddingConfig.model,
+              queryText,
+              "search_query",
+            ),
+          ],
           model: embeddingConfig.model,
-          input: addNomicTaskPrefix(
-            embeddingConfig.model,
-            queryText,
-            "search_query",
-          ),
-          ...(embeddingConfig.model.startsWith("nomic")
-            ? {}
-            : { dimensions: embeddingConfig.dimensions }),
-        });
-      },
+          apiKey: embeddingConfig.apiKey,
+          baseUrl: embeddingConfig.baseUrl,
+          dimensions: embeddingConfig.dimensions,
+          provider: embeddingConfig.provider,
+        }),
       buildInteraction: (
         response: Parameters<typeof buildEmbeddingInteraction>[0]["response"],
       ) =>

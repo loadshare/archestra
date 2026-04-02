@@ -84,8 +84,7 @@ const headerNavItems: NavItem[] = [
     title: "New Chat",
     url: "/chat",
     icon: MessageCircle,
-    customIsActive: (pathname: string, searchParams: URLSearchParams) =>
-      pathname === "/chat" && !searchParams.get("conversation"),
+    customIsActive: (pathname: string) => pathname === "/chat",
   },
 ];
 
@@ -130,10 +129,10 @@ const contentNavGroups: NavGroup[] = [
           },
           {
             title: "Guardrails",
-            url: "/mcp/tool-policies",
+            url: "/mcp/tool-guardrails",
             testId: E2eTestId.SidebarNavGuardrails,
             customIsActive: (pathname: string) =>
-              pathname.startsWith("/mcp/tool-policies"),
+              pathname.startsWith("/mcp/tool-guardrails"),
           },
         ],
       },
