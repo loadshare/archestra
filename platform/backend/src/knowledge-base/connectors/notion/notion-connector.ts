@@ -1,4 +1,15 @@
 import type {
+  BlockObjectResponse,
+  ListBlockChildrenResponse,
+  PartialBlockObjectResponse,
+} from "@notionhq/client/build/src/api-endpoints/blocks";
+import type {
+  PageObjectResponse,
+  PartialPageObjectResponse,
+  RichTextItemResponse,
+} from "@notionhq/client/build/src/api-endpoints/common";
+import type { SearchResponse } from "@notionhq/client/build/src/api-endpoints/search";
+import type {
   ConnectorCredentials,
   ConnectorDocument,
   ConnectorSyncBatch,
@@ -16,6 +27,24 @@ const NOTION_API_BASE = "https://api.notion.com/v1";
 const NOTION_API_VERSION = "2022-06-28";
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BLOCK_DEPTH = 3;
+// Subtract 5 min from syncFrom to guard against clock skew between Notion
+// servers and our system, so we never skip a page that was edited right
+// around the checkpoint boundary.
+const INCREMENTAL_SAFETY_BUFFER_MS = 5 * 60 * 1000;
+
+// Notion's REST API still exposes POST /databases/:id/query but the v5 SDK
+// dropped the method, so we call it via fetchWithRetry and type the response
+// ourselves.
+type NotionDatabaseQueryResponse = {
+  object: "list";
+  results: Array<
+    | PageObjectResponse
+    | PartialPageObjectResponse
+    | { object: string; id: string }
+  >;
+  next_cursor: string | null;
+  has_more: boolean;
+};
 
 export class NotionConnector extends BaseConnector {
   type = "notion" as const;
@@ -39,9 +68,7 @@ export class NotionConnector extends BaseConnector {
     try {
       const response = await this.fetchWithRetry(
         `${NOTION_API_BASE}/users/me`,
-        {
-          headers: buildHeaders(params.credentials),
-        },
+        { headers: buildHeaders(params.credentials) },
       );
 
       if (!response.ok) {
@@ -85,20 +112,36 @@ export class NotionConnector extends BaseConnector {
       "Starting Notion sync",
     );
 
-    // If specific pageIds are provided, sync those directly
+    // Specific pages: always re-fetch the listed IDs, skip block content if
+    // the page has not changed since the last sync.
     if (parsed.pageIds && parsed.pageIds.length > 0) {
       yield* this.syncSpecificPages(
         parsed,
         params.credentials,
         checkpoint,
+        syncFrom,
         batchSize,
       );
       return;
     }
 
-    // Search for pages (filtered by databaseIds if provided, otherwise all accessible pages)
+    // Database IDs: use Notion's database query endpoint which supports
+    // server-side filtering by last_edited_time — true incremental sync.
+    if (parsed.databaseIds && parsed.databaseIds.length > 0) {
+      yield* this.syncFromDatabases(
+        parsed,
+        params.credentials,
+        checkpoint,
+        syncFrom,
+        batchSize,
+      );
+      return;
+    }
+
+    // No IDs provided: fall back to the global search API. The search endpoint
+    // has no time filter, so we post-filter to skip unchanged pages and avoid
+    // unnecessary block-content fetches.
     yield* this.searchAndSyncPages(
-      parsed,
       params.credentials,
       checkpoint,
       syncFrom,
@@ -112,9 +155,13 @@ export class NotionConnector extends BaseConnector {
     config: NotionConfig,
     credentials: ConnectorCredentials,
     checkpoint: NotionCheckpoint,
+    syncFrom: string | undefined,
     batchSize: number,
   ): AsyncGenerator<ConnectorSyncBatch> {
     const pageIds = config.pageIds ?? [];
+    const safetyBufferedSyncFrom = syncFrom
+      ? subtractSafetyBuffer(syncFrom)
+      : undefined;
     let batchIndex = 0;
 
     for (let i = 0; i < pageIds.length; i += batchSize) {
@@ -127,8 +174,19 @@ export class NotionConnector extends BaseConnector {
           fetch: async () => {
             const page = await this.fetchPage(pageId, credentials);
             if (!page) return null;
-            const content = await this.fetchPageContent(pageId, credentials);
-            return pageToDocument(page, content);
+
+            // Skip block content if the page has not been edited since the
+            // last sync.  We still upsert the document with its current
+            // metadata so deletions / title changes are reflected.
+            const isUnchanged =
+              safetyBufferedSyncFrom &&
+              page.last_edited_time <= safetyBufferedSyncFrom;
+
+            const content = isUnchanged
+              ? undefined
+              : await this.fetchPageContent(pageId, credentials);
+
+            return pageToDocument(page, content ?? "");
           },
           fallback: null,
           itemId: pageId,
@@ -159,13 +217,159 @@ export class NotionConnector extends BaseConnector {
     }
   }
 
-  private async *searchAndSyncPages(
+  private async *syncFromDatabases(
     config: NotionConfig,
     credentials: ConnectorCredentials,
     checkpoint: NotionCheckpoint,
     syncFrom: string | undefined,
     batchSize: number,
   ): AsyncGenerator<ConnectorSyncBatch> {
+    const databaseIds = config.databaseIds ?? [];
+    const safetyBufferedSyncFrom = syncFrom
+      ? subtractSafetyBuffer(syncFrom)
+      : undefined;
+
+    for (let dbIndex = 0; dbIndex < databaseIds.length; dbIndex++) {
+      const databaseId = databaseIds[dbIndex];
+      const isLastDb = dbIndex === databaseIds.length - 1;
+
+      yield* this.queryDatabase({
+        databaseId,
+        credentials,
+        checkpoint,
+        syncFrom: safetyBufferedSyncFrom,
+        batchSize,
+        isLastDb,
+      });
+    }
+  }
+
+  private async *queryDatabase(params: {
+    databaseId: string;
+    credentials: ConnectorCredentials;
+    checkpoint: NotionCheckpoint;
+    syncFrom: string | undefined;
+    batchSize: number;
+    isLastDb: boolean;
+  }): AsyncGenerator<ConnectorSyncBatch> {
+    const {
+      databaseId,
+      credentials,
+      checkpoint,
+      syncFrom,
+      batchSize,
+      isLastDb,
+    } = params;
+    let cursor: string | undefined;
+    let hasMore = true;
+    let batchIndex = 0;
+
+    while (hasMore) {
+      await this.rateLimit();
+
+      try {
+        this.log.debug(
+          { databaseId, batchIndex, cursor, syncFrom },
+          "Querying Notion database",
+        );
+
+        const queryBody = buildDatabaseQueryBody({
+          syncFrom,
+          cursor,
+          pageSize: batchSize,
+        });
+
+        const response = await this.fetchWithRetry(
+          `${NOTION_API_BASE}/databases/${databaseId}/query`,
+          {
+            method: "POST",
+            headers: buildHeaders(credentials),
+            body: JSON.stringify(queryBody),
+          },
+        );
+
+        if (!response.ok) {
+          const body = await response.text();
+          throw new Error(
+            `Notion database query failed with HTTP ${response.status}: ${body.slice(0, 200)}`,
+          );
+        }
+
+        const result = (await response.json()) as NotionDatabaseQueryResponse;
+        const results = result.results;
+
+        const documents: ConnectorDocument[] = [];
+
+        for (const item of results) {
+          if (item.object !== "page" || !isFullPageObject(item)) continue;
+
+          const pageId = item.id;
+          try {
+            const content = await this.fetchPageContent(pageId, credentials);
+            documents.push(pageToDocument(item, content));
+          } catch (error) {
+            this.log.warn(
+              { pageId, error: extractErrorMessage(error) },
+              "Failed to fetch page content, using metadata only",
+            );
+            documents.push(pageToDocument(item, ""));
+          }
+        }
+
+        cursor = result.next_cursor ?? undefined;
+        // Only set hasMore=true when there are more pages AND it's this DB,
+        // so the outer loop can yield the final batch with hasMore=false.
+        const dbHasMore = result.has_more === true && !!cursor;
+        hasMore = dbHasMore;
+
+        const lastResult = results[results.length - 1];
+        const lastEditedAt =
+          lastResult && isFullPageObject(lastResult)
+            ? lastResult.last_edited_time
+            : undefined;
+
+        batchIndex++;
+        this.log.debug(
+          {
+            databaseId,
+            batchIndex,
+            pageCount: results.length,
+            documentCount: documents.length,
+            hasMore: dbHasMore,
+          },
+          "Notion database query batch done",
+        );
+
+        yield {
+          documents,
+          failures: this.flushFailures(),
+          checkpoint: buildCheckpoint({
+            type: "notion",
+            itemUpdatedAt: lastEditedAt,
+            previousLastSyncedAt: checkpoint.lastSyncedAt,
+            extra: { lastEditedAt: lastEditedAt ?? checkpoint.lastEditedAt },
+          }),
+          hasMore: dbHasMore || !isLastDb,
+        };
+      } catch (error) {
+        this.log.error(
+          { databaseId, batchIndex, error: extractErrorMessage(error) },
+          "Notion database query batch failed",
+        );
+        throw error;
+      }
+    }
+  }
+
+  private async *searchAndSyncPages(
+    credentials: ConnectorCredentials,
+    checkpoint: NotionCheckpoint,
+    syncFrom: string | undefined,
+    batchSize: number,
+  ): AsyncGenerator<ConnectorSyncBatch> {
+    const safetyBufferedSyncFrom = syncFrom
+      ? subtractSafetyBuffer(syncFrom)
+      : undefined;
     let cursor: string | undefined;
     let hasMore = true;
     let batchIndex = 0;
@@ -176,12 +380,7 @@ export class NotionConnector extends BaseConnector {
       try {
         this.log.debug({ batchIndex, cursor }, "Fetching Notion search batch");
 
-        const searchBody = buildSearchBody({
-          databaseIds: config.databaseIds,
-          syncFrom,
-          cursor,
-          pageSize: batchSize,
-        });
+        const searchBody = buildSearchBody({ cursor, pageSize: batchSize });
 
         const response = await this.fetchWithRetry(
           `${NOTION_API_BASE}/search`,
@@ -199,39 +398,50 @@ export class NotionConnector extends BaseConnector {
           );
         }
 
-        // biome-ignore lint/suspicious/noExplicitAny: Notion API response
-        const result = (await response.json()) as any;
-        const results: unknown[] = result.results ?? [];
+        const result = (await response.json()) as SearchResponse;
+        const results = result.results;
 
         const documents: ConnectorDocument[] = [];
 
         for (const item of results) {
-          const page = item as Record<string, unknown>;
-          if (page.object !== "page") continue;
+          if (item.object !== "page" || !isFullPageObject(item)) continue;
 
-          const pageId = String(page.id ?? "");
-          if (!pageId) continue;
+          // The search API has no server-side time filter, so post-filter here.
+          // Pages that haven't changed since the last sync are skipped to avoid
+          // re-fetching block content and re-embedding unchanged documents.
+          if (
+            safetyBufferedSyncFrom &&
+            item.last_edited_time <= safetyBufferedSyncFrom
+          ) {
+            continue;
+          }
 
+          const pageId = item.id;
           try {
             const content = await this.fetchPageContent(pageId, credentials);
-            documents.push(pageToDocument(page, content));
+            documents.push(pageToDocument(item, content));
           } catch (error) {
             this.log.warn(
               { pageId, error: extractErrorMessage(error) },
               "Failed to fetch page content, using metadata only",
             );
-            documents.push(pageToDocument(page, ""));
+            documents.push(pageToDocument(item, ""));
           }
         }
 
         cursor = result.next_cursor ?? undefined;
         hasMore = result.has_more === true && !!cursor;
 
-        const lastResult = results[results.length - 1] as
-          | Record<string, unknown>
-          | undefined;
-        const lastEditedAt = lastResult?.last_edited_time as string | undefined;
+        // Advance the checkpoint using the last result in the page (not just
+        // the last processed doc) so the cursor position advances even when
+        // every item in a batch was skipped as unchanged.
+        const lastResult = results[results.length - 1];
+        const lastEditedAt =
+          lastResult && isFullPageObject(lastResult)
+            ? lastResult.last_edited_time
+            : undefined;
 
+        batchIndex++;
         this.log.debug(
           {
             batchIndex,
@@ -242,7 +452,6 @@ export class NotionConnector extends BaseConnector {
           "Notion search batch done",
         );
 
-        batchIndex++;
         yield {
           documents,
           failures: this.flushFailures(),
@@ -267,7 +476,7 @@ export class NotionConnector extends BaseConnector {
   private async fetchPage(
     pageId: string,
     credentials: ConnectorCredentials,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<PageObjectResponse | null> {
     const response = await this.fetchWithRetry(
       `${NOTION_API_BASE}/pages/${pageId}`,
       { headers: buildHeaders(credentials) },
@@ -279,7 +488,7 @@ export class NotionConnector extends BaseConnector {
       throw new Error(`HTTP ${response.status}: ${body.slice(0, 200)}`);
     }
 
-    return (await response.json()) as Record<string, unknown>;
+    return (await response.json()) as PageObjectResponse;
   }
 
   private async fetchPageContent(
@@ -296,20 +505,23 @@ export class NotionConnector extends BaseConnector {
 
     if (!response.ok) return "";
 
-    // biome-ignore lint/suspicious/noExplicitAny: Notion API block response
-    const result = (await response.json()) as any;
-    const blocks: unknown[] = result.results ?? [];
+    const result = (await response.json()) as ListBlockChildrenResponse;
+    const blocks = result.results;
 
     const parts: string[] = [];
 
     for (const block of blocks) {
-      const b = block as Record<string, unknown>;
-      const text = extractBlockText(b);
+      const text = extractBlockText(block);
       if (text) parts.push(text);
 
-      if (b.has_children && depth < MAX_BLOCK_DEPTH - 1) {
+      if (
+        block.object === "block" &&
+        "has_children" in block &&
+        block.has_children &&
+        depth < MAX_BLOCK_DEPTH - 1
+      ) {
         const childContent = await this.fetchPageContent(
-          String(b.id),
+          block.id,
           credentials,
           depth + 1,
         );
@@ -322,6 +534,19 @@ export class NotionConnector extends BaseConnector {
 }
 
 // ===== Module-level helpers =====
+
+function isFullPageObject(item: {
+  object: string;
+  id: string;
+}): item is PageObjectResponse {
+  return "properties" in item && "last_edited_time" in item;
+}
+
+function subtractSafetyBuffer(isoDate: string): string {
+  return new Date(
+    new Date(isoDate).getTime() - INCREMENTAL_SAFETY_BUFFER_MS,
+  ).toISOString();
+}
 
 function buildHeaders(
   credentials: ConnectorCredentials,
@@ -340,9 +565,32 @@ function parseNotionConfig(
   return result.success ? result.data : null;
 }
 
-function buildSearchBody(params: {
-  databaseIds?: string[];
+function buildDatabaseQueryBody(params: {
   syncFrom?: string;
+  cursor?: string;
+  pageSize: number;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    sorts: [{ timestamp: "last_edited_time", direction: "ascending" }],
+    page_size: params.pageSize,
+  };
+
+  // Server-side incremental filter — only return pages edited after syncFrom.
+  if (params.syncFrom) {
+    body.filter = {
+      timestamp: "last_edited_time",
+      last_edited_time: { after: params.syncFrom },
+    };
+  }
+
+  if (params.cursor) {
+    body.start_cursor = params.cursor;
+  }
+
+  return body;
+}
+
+function buildSearchBody(params: {
   cursor?: string;
   pageSize: number;
 }): Record<string, unknown> {
@@ -359,33 +607,30 @@ function buildSearchBody(params: {
   return body;
 }
 
-function extractPageTitle(page: Record<string, unknown>): string {
-  // biome-ignore lint/suspicious/noExplicitAny: Notion page properties shape varies
-  const properties = page.properties as Record<string, any> | undefined;
-  if (!properties) return "Untitled";
+function extractPageTitle(page: PageObjectResponse): string {
+  const properties = page.properties;
 
-  // Try common title property names
+  // Try common title property names first for efficiency
   for (const key of ["title", "Title", "Name", "name"]) {
     const prop = properties[key];
-    if (prop?.type === "title" && Array.isArray(prop.title)) {
-      const text = prop.title
-        .map((t: Record<string, unknown>) => {
-          const rt = t as Record<string, unknown>;
-          return String((rt.plain_text as string | undefined) ?? "");
-        })
-        .join("");
+    if (prop && "type" in prop && prop.type === "title" && "title" in prop) {
+      const titleProp = prop as {
+        type: "title";
+        title: Array<RichTextItemResponse>;
+      };
+      const text = titleProp.title.map((t) => t.plain_text).join("");
       if (text.trim()) return text.trim();
     }
   }
 
-  // Fall back to first title-type property
+  // Fall back to first title-type property found
   for (const prop of Object.values(properties)) {
-    if (prop?.type === "title" && Array.isArray(prop.title)) {
-      const text = prop.title
-        .map((t: Record<string, unknown>) =>
-          String((t as Record<string, unknown>).plain_text ?? ""),
-        )
-        .join("");
+    if (prop && "type" in prop && prop.type === "title" && "title" in prop) {
+      const titleProp = prop as {
+        type: "title";
+        title: Array<RichTextItemResponse>;
+      };
+      const text = titleProp.title.map((t) => t.plain_text).join("");
       if (text.trim()) return text.trim();
     }
   }
@@ -393,21 +638,18 @@ function extractPageTitle(page: Record<string, unknown>): string {
   return "Untitled";
 }
 
-function extractBlockText(block: Record<string, unknown>): string {
-  const type = block.type as string | undefined;
-  if (!type) return "";
+function extractBlockText(
+  block: BlockObjectResponse | PartialBlockObjectResponse,
+): string {
+  if (!("type" in block)) return "";
 
-  // biome-ignore lint/suspicious/noExplicitAny: Notion block types
-  const blockData = (block as any)[type] as Record<string, unknown> | undefined;
-  if (!blockData) return "";
+  const type = block.type;
+  // Access the block-type-specific content by its discriminant key
+  type BlockContent = { rich_text?: Array<RichTextItemResponse> };
+  const blockData = (block as unknown as Record<string, BlockContent>)[type];
+  if (!blockData?.rich_text) return "";
 
-  const richText = blockData.rich_text as
-    | Array<Record<string, unknown>>
-    | undefined;
-  if (!richText) return "";
-
-  const text = richText.map((rt) => String(rt.plain_text ?? "")).join("");
-
+  const text = blockData.rich_text.map((rt) => rt.plain_text).join("");
   if (!text.trim()) return "";
 
   switch (type) {
@@ -431,13 +673,11 @@ function extractBlockText(block: Record<string, unknown>): string {
 }
 
 function pageToDocument(
-  page: Record<string, unknown>,
+  page: PageObjectResponse,
   content: string,
 ): ConnectorDocument {
-  const id = String(page.id ?? "");
+  const id = page.id;
   const title = extractPageTitle(page);
-  const lastEditedTime = page.last_edited_time as string | undefined;
-  const url = page.url as string | undefined;
 
   const fullContent = content ? `# ${title}\n\n${content}` : `# ${title}`;
 
@@ -445,13 +685,13 @@ function pageToDocument(
     id,
     title,
     content: fullContent,
-    sourceUrl: url,
+    sourceUrl: page.url,
     metadata: {
       notionPageId: id,
-      lastEditedTime,
-      createdTime: page.created_time as string | undefined,
-      archived: page.archived as boolean | undefined,
+      lastEditedTime: page.last_edited_time,
+      createdTime: page.created_time,
+      archived: page.archived,
     },
-    updatedAt: lastEditedTime ? new Date(lastEditedTime) : undefined,
+    updatedAt: new Date(page.last_edited_time),
   };
 }

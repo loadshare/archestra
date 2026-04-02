@@ -33,6 +33,23 @@ function makeSearchResponse(
     ok: true,
     json: async () => ({
       object: "list",
+      type: "page_or_data_source",
+      results: pages,
+      has_more: opts?.hasMore ?? false,
+      next_cursor: opts?.nextCursor ?? null,
+    }),
+  } as unknown as Response;
+}
+
+// Helper to build a mock database query response
+function makeDatabaseQueryResponse(
+  pages: ReturnType<typeof makePage>[],
+  opts?: { hasMore?: boolean; nextCursor?: string },
+) {
+  return {
+    ok: true,
+    json: async () => ({
+      object: "list",
       results: pages,
       has_more: opts?.hasMore ?? false,
       next_cursor: opts?.nextCursor ?? null,
@@ -49,6 +66,8 @@ function makeBlocksResponse(
     ok: true,
     json: async () => ({
       object: "list",
+      type: "block",
+      block: {},
       results: texts.map((text) => ({
         object: "block",
         id: `block-${text.slice(0, 5)}`,
@@ -57,6 +76,7 @@ function makeBlocksResponse(
         paragraph: { rich_text: [{ plain_text: text }] },
       })),
       has_more: opts?.hasMore ?? false,
+      next_cursor: null,
     }),
   } as unknown as Response;
 }
@@ -111,7 +131,9 @@ describe("NotionConnector", () => {
     it("returns failure on non-OK response", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       ).mockResolvedValueOnce({
         ok: false,
@@ -131,7 +153,9 @@ describe("NotionConnector", () => {
     it("returns success on OK response", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       ).mockResolvedValueOnce({
         ok: true,
@@ -149,7 +173,9 @@ describe("NotionConnector", () => {
     it("returns failure when fetch throws", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       ).mockRejectedValueOnce(new Error("Network error"));
 
@@ -163,11 +189,13 @@ describe("NotionConnector", () => {
     });
   });
 
-  describe("sync — search mode (no pageIds)", () => {
+  describe("sync — search mode (no IDs)", () => {
     it("yields a batch of documents from search results", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
@@ -176,11 +204,8 @@ describe("NotionConnector", () => {
         makePage("page-2", "Second Page"),
       ];
 
-      // search call
       fetchMock.mockResolvedValueOnce(makeSearchResponse(pages));
-      // blocks for page-1
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Hello world"]));
-      // blocks for page-2
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Some content"]));
 
       const batches: ConnectorSyncBatch[] = [];
@@ -203,14 +228,15 @@ describe("NotionConnector", () => {
     it("paginates through multiple search pages using cursor", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
       const page1 = makePage("page-1", "Page One");
       const page2 = makePage("page-2", "Page Two");
 
-      // First search page — has more
       fetchMock.mockResolvedValueOnce(
         makeSearchResponse([page1], {
           hasMore: true,
@@ -219,7 +245,6 @@ describe("NotionConnector", () => {
       );
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Content one"]));
 
-      // Second search page — no more
       fetchMock.mockResolvedValueOnce(makeSearchResponse([page2]));
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Content two"]));
 
@@ -239,20 +264,24 @@ describe("NotionConnector", () => {
       expect(batches[1].documents[0].id).toBe("page-2");
     });
 
-    it("skips non-page objects in search results", async () => {
+    it("skips non-page and partial-page objects in search results", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
-      // Mix of page and database objects
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
+          type: "page_or_data_source",
+          object: "list",
           results: [
             makePage("page-1", "A Page"),
             { object: "database", id: "db-1" },
+            { object: "page", id: "partial-page" }, // PartialPageObjectResponse — no properties
             makePage("page-2", "Another Page"),
           ],
           has_more: false,
@@ -271,16 +300,67 @@ describe("NotionConnector", () => {
         batches.push(batch);
       }
 
+      // Only full PageObjectResponse items with properties are included
       expect(batches[0].documents).toHaveLength(2);
       expect(batches[0].documents.every((d) => d.metadata.notionPageId)).toBe(
         true,
       );
     });
 
+    it("post-filters unchanged pages when checkpoint is present", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      // lastSyncedAt is 2024-01-15T12:00:00Z, safety buffer subtracts 5 min
+      // so effective cutoff is 2024-01-15T11:55:00Z
+      const checkpoint = {
+        type: "notion",
+        lastSyncedAt: "2024-01-15T12:00:00.000Z",
+      };
+
+      const pages = [
+        makePage("old-page", "Old", {
+          lastEditedTime: "2024-01-10T00:00:00.000Z",
+        }), // before cutoff — skip
+        makePage("new-page", "New", {
+          lastEditedTime: "2024-01-20T00:00:00.000Z",
+        }), // after cutoff — process
+      ];
+
+      fetchMock.mockResolvedValueOnce(makeSearchResponse(pages));
+      // only new-page should have its blocks fetched
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Fresh content"]));
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: {},
+        credentials,
+        checkpoint,
+      })) {
+        batches.push(batch);
+      }
+
+      // old-page is skipped, only new-page returned
+      expect(batches[0].documents).toHaveLength(1);
+      expect(batches[0].documents[0].id).toBe("new-page");
+      // checkpoint advances to last result's time (old-page), not just processed ones
+      const cp = batches[0].checkpoint as Record<string, unknown>;
+      expect(cp.lastSyncedAt).toBe("2024-01-20T00:00:00.000Z");
+      // fetchWithRetry called exactly twice: search + one blocks call
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
     it("continues sync when page content fetch fails", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
@@ -291,14 +371,11 @@ describe("NotionConnector", () => {
       ];
 
       fetchMock.mockResolvedValueOnce(makeSearchResponse(pages));
-      // page-1 blocks — ok
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Good content"]));
-      // page-2 blocks — fails
       fetchMock.mockResolvedValueOnce({
         ok: false,
         json: async () => ({}),
       } as unknown as Response);
-      // page-3 blocks — ok
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["More content"]));
 
       const batches: ConnectorSyncBatch[] = [];
@@ -310,7 +387,6 @@ describe("NotionConnector", () => {
         batches.push(batch);
       }
 
-      // All 3 documents yielded — page-2 has empty content fallback
       expect(batches[0].documents).toHaveLength(3);
       expect(batches[0].documents[0].content).toContain("Good content");
       expect(batches[0].documents[1].content).toBe("# Bad Page");
@@ -320,7 +396,9 @@ describe("NotionConnector", () => {
     it("throws when search endpoint returns error", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       ).mockResolvedValueOnce({
         ok: false,
@@ -333,14 +411,15 @@ describe("NotionConnector", () => {
         credentials,
         checkpoint: null,
       });
-
       await expect(generator.next()).rejects.toThrow("Notion search failed");
     });
 
     it("sets checkpoint lastSyncedAt from last result last_edited_time", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
@@ -374,7 +453,9 @@ describe("NotionConnector", () => {
     it("preserves previous checkpoint when batch is empty", async () => {
       const connector = new NotionConnector();
       vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       ).mockResolvedValueOnce(makeSearchResponse([]));
 
@@ -397,14 +478,15 @@ describe("NotionConnector", () => {
     it("builds correct sourceUrl from page url", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
       const page = makePage("abc-123", "My Page", {
         url: "https://www.notion.so/My-Page-abc123",
       });
-
       fetchMock.mockResolvedValueOnce(makeSearchResponse([page]));
       fetchMock.mockResolvedValueOnce(makeBlocksResponse([]));
 
@@ -425,14 +507,15 @@ describe("NotionConnector", () => {
     it("includes metadata in document", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
       const page = makePage("page-id-1", "Test", {
         lastEditedTime: "2024-03-01T08:00:00.000Z",
       });
-
       fetchMock.mockResolvedValueOnce(makeSearchResponse([page]));
       fetchMock.mockResolvedValueOnce(makeBlocksResponse([]));
 
@@ -452,24 +535,227 @@ describe("NotionConnector", () => {
     });
   });
 
-  describe("sync — specific pages mode (with pageIds)", () => {
+  describe("sync — database mode (databaseIds provided)", () => {
+    it("queries /databases/:id/query instead of /search", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      const page = makePage("page-1", "DB Page");
+      fetchMock.mockResolvedValueOnce(makeDatabaseQueryResponse([page]));
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["DB content"]));
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: { databaseIds: ["db-abc"] },
+        credentials,
+        checkpoint: null,
+      })) {
+        batches.push(batch);
+      }
+
+      expect(batches[0].documents).toHaveLength(1);
+      expect(batches[0].documents[0].content).toContain("DB content");
+
+      // First call must be the database query endpoint, not /search
+      const firstCallUrl = (fetchMock.mock.calls[0] as unknown[])[0] as string;
+      expect(firstCallUrl).toContain("/databases/db-abc/query");
+      expect(firstCallUrl).not.toContain("/search");
+    });
+
+    it("sends last_edited_time filter when checkpoint is present", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      const page = makePage("page-1", "Changed Page", {
+        lastEditedTime: "2024-02-01T00:00:00.000Z",
+      });
+      fetchMock.mockResolvedValueOnce(makeDatabaseQueryResponse([page]));
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["New content"]));
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: { databaseIds: ["db-abc"] },
+        credentials,
+        checkpoint: {
+          type: "notion",
+          lastSyncedAt: "2024-01-15T12:00:00.000Z",
+        },
+      })) {
+        batches.push(batch);
+      }
+
+      expect(batches[0].documents).toHaveLength(1);
+
+      // Verify the request body includes the last_edited_time filter
+      const requestBody = JSON.parse(
+        (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1]
+          .body,
+      );
+      expect(requestBody.filter).toBeDefined();
+      expect(requestBody.filter.timestamp).toBe("last_edited_time");
+      expect(requestBody.filter.last_edited_time.after).toBeDefined();
+    });
+
+    it("does not send filter on first sync (no checkpoint)", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      fetchMock.mockResolvedValueOnce(makeDatabaseQueryResponse([]));
+
+      for await (const _ of connector.sync({
+        config: { databaseIds: ["db-abc"] },
+        credentials,
+        checkpoint: null,
+      })) {
+        // consume
+      }
+
+      const requestBody = JSON.parse(
+        (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1]
+          .body,
+      );
+      expect(requestBody.filter).toBeUndefined();
+    });
+
+    it("syncs multiple databases in sequence", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      const pageA = makePage("page-a", "DB A Page");
+      const pageB = makePage("page-b", "DB B Page");
+
+      // DB 1 query
+      fetchMock.mockResolvedValueOnce(makeDatabaseQueryResponse([pageA]));
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Content A"]));
+      // DB 2 query
+      fetchMock.mockResolvedValueOnce(makeDatabaseQueryResponse([pageB]));
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Content B"]));
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: { databaseIds: ["db-1", "db-2"] },
+        credentials,
+        checkpoint: null,
+      })) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(2);
+      expect(batches[0].hasMore).toBe(true); // more databases to go
+      expect(batches[1].hasMore).toBe(false); // last database done
+      expect(batches[0].documents[0].id).toBe("page-a");
+      expect(batches[1].documents[0].id).toBe("page-b");
+
+      const firstUrl = (fetchMock.mock.calls[0] as unknown[])[0] as string;
+      const thirdUrl = (fetchMock.mock.calls[2] as unknown[])[0] as string;
+      expect(firstUrl).toContain("/databases/db-1/query");
+      expect(thirdUrl).toContain("/databases/db-2/query");
+    });
+
+    it("paginates within a database using cursor", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      const page1 = makePage("page-1", "First");
+      const page2 = makePage("page-2", "Second");
+
+      fetchMock.mockResolvedValueOnce(
+        makeDatabaseQueryResponse([page1], {
+          hasMore: true,
+          nextCursor: "cursor-xyz",
+        }),
+      );
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["First content"]));
+      fetchMock.mockResolvedValueOnce(makeDatabaseQueryResponse([page2]));
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Second content"]));
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: { databaseIds: ["db-1"] },
+        credentials,
+        checkpoint: null,
+      })) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(2);
+      expect(batches[0].documents[0].id).toBe("page-1");
+      expect(batches[1].documents[0].id).toBe("page-2");
+
+      // Second call should include the cursor from the first response
+      const secondCallBody = JSON.parse(
+        (fetchMock.mock.calls[2] as unknown as [string, { body: string }])[1]
+          .body,
+      );
+      expect(secondCallBody.start_cursor).toBe("cursor-xyz");
+    });
+
+    it("throws when database query returns error", async () => {
+      const connector = new NotionConnector();
+      vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      ).mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => "Forbidden",
+      } as unknown as Response);
+
+      const generator = connector.sync({
+        config: { databaseIds: ["db-secret"] },
+        credentials,
+        checkpoint: null,
+      });
+
+      await expect(generator.next()).rejects.toThrow(
+        "Notion database query failed",
+      );
+    });
+  });
+
+  describe("sync — specific pages mode (pageIds provided)", () => {
     it("yields documents for specific pageIds", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
       const page1 = makePage("page-aaa", "Page AAA");
       const page2 = makePage("page-bbb", "Page BBB");
 
-      // fetchPage for page-aaa
       fetchMock.mockResolvedValueOnce(makePageResponse(page1));
-      // fetchPageContent for page-aaa
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Content AAA"]));
-      // fetchPage for page-bbb
       fetchMock.mockResolvedValueOnce(makePageResponse(page2));
-      // fetchPageContent for page-bbb
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Content BBB"]));
 
       const batches: ConnectorSyncBatch[] = [];
@@ -491,18 +777,18 @@ describe("NotionConnector", () => {
     it("skips page that returns 404", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
-      // page-gone returns 404
       fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 404,
         text: async () => "Not found",
       } as unknown as Response);
 
-      // page-exists returns ok
       const page = makePage("page-exists", "Exists");
       fetchMock.mockResolvedValueOnce(makePageResponse(page));
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Exists content"]));
@@ -520,20 +806,71 @@ describe("NotionConnector", () => {
       expect(batches[0].documents[0].id).toBe("page-exists");
     });
 
+    it("skips block content fetch for unchanged pages when checkpoint is present", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      // checkpoint is 2024-01-15T12:00:00Z, safety buffer → cutoff 2024-01-15T11:55:00Z
+      const checkpoint = {
+        type: "notion",
+        lastSyncedAt: "2024-01-15T12:00:00.000Z",
+      };
+
+      const oldPage = makePage("old-page", "Unchanged", {
+        lastEditedTime: "2024-01-10T00:00:00.000Z",
+      });
+      const newPage = makePage("new-page", "Changed", {
+        lastEditedTime: "2024-01-20T00:00:00.000Z",
+      });
+
+      // page fetches for both (metadata always fetched)
+      fetchMock.mockResolvedValueOnce(makePageResponse(oldPage));
+      fetchMock.mockResolvedValueOnce(makePageResponse(newPage));
+      // blocks only for new-page (old-page content is skipped)
+      fetchMock.mockResolvedValueOnce(makeBlocksResponse(["New content"]));
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: { pageIds: ["old-page", "new-page"] },
+        credentials,
+        checkpoint,
+      })) {
+        batches.push(batch);
+      }
+
+      // Both pages returned (metadata still upserted), but only new-page has content
+      expect(batches[0].documents).toHaveLength(2);
+      expect(batches[0].documents[0].content).toBe("# Unchanged"); // no body
+      expect(batches[0].documents[1].content).toContain("New content");
+      // fetchWithRetry: 2 page fetches + 1 blocks fetch = 3 total
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
     it("produces correct markdown content from block types", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
-        connector as unknown as { fetchWithRetry: unknown },
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
         "fetchWithRetry",
       );
 
       const page = makePage("page-1", "Formatted Page");
       fetchMock.mockResolvedValueOnce(makePageResponse(page));
 
-      // Blocks with different types
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
+          type: "block",
+          block: {},
+          object: "list",
+          next_cursor: null,
+          has_more: false,
           results: [
             {
               object: "block",
@@ -571,7 +908,6 @@ describe("NotionConnector", () => {
               code: { rich_text: [{ plain_text: "const x = 1" }] },
             },
           ],
-          has_more: false,
         }),
       } as unknown as Response);
 
@@ -598,7 +934,6 @@ describe("NotionConnector", () => {
       const connector = new NotionConnector();
 
       const generator = connector.sync({
-        // batchSize as string is invalid
         config: { batchSize: "not-a-number" },
         credentials,
         checkpoint: null,
