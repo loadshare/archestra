@@ -175,18 +175,17 @@ export class NotionConnector extends BaseConnector {
             const page = await this.fetchPage(pageId, credentials);
             if (!page) return null;
 
-            // Skip block content if the page has not been edited since the
-            // last sync.  We still upsert the document with its current
-            // metadata so deletions / title changes are reflected.
+            // Skip pages that haven't changed since the last sync entirely.
+            // Returning null avoids re-indexing the page with only its title
+            // (no body), which would overwrite the previously-stored full
+            // content in the knowledge base.
             const isUnchanged =
               safetyBufferedSyncFrom &&
               page.last_edited_time <= safetyBufferedSyncFrom;
+            if (isUnchanged) return null;
 
-            const content = isUnchanged
-              ? undefined
-              : await this.fetchPageContent(pageId, credentials);
-
-            return pageToDocument(page, content ?? "");
+            const content = await this.fetchPageContent(pageId, credentials);
+            return pageToDocument(page, content);
           },
           fallback: null,
           itemId: pageId,
@@ -304,16 +303,16 @@ export class NotionConnector extends BaseConnector {
           if (item.object !== "page" || !isFullPageObject(item)) continue;
 
           const pageId = item.id;
-          try {
-            const content = await this.fetchPageContent(pageId, credentials);
-            documents.push(pageToDocument(item, content));
-          } catch (error) {
-            this.log.warn(
-              { pageId, error: extractErrorMessage(error) },
-              "Failed to fetch page content, using metadata only",
-            );
-            documents.push(pageToDocument(item, ""));
-          }
+          const doc = await this.safeItemFetch({
+            fetch: async () => {
+              const content = await this.fetchPageContent(pageId, credentials);
+              return pageToDocument(item, content);
+            },
+            fallback: null,
+            itemId: pageId,
+            resource: "page",
+          });
+          if (doc) documents.push(doc);
         }
 
         cursor = result.next_cursor ?? undefined;
@@ -417,16 +416,16 @@ export class NotionConnector extends BaseConnector {
           }
 
           const pageId = item.id;
-          try {
-            const content = await this.fetchPageContent(pageId, credentials);
-            documents.push(pageToDocument(item, content));
-          } catch (error) {
-            this.log.warn(
-              { pageId, error: extractErrorMessage(error) },
-              "Failed to fetch page content, using metadata only",
-            );
-            documents.push(pageToDocument(item, ""));
-          }
+          const doc = await this.safeItemFetch({
+            fetch: async () => {
+              const content = await this.fetchPageContent(pageId, credentials);
+              return pageToDocument(item, content);
+            },
+            fallback: null,
+            itemId: pageId,
+            resource: "page",
+          });
+          if (doc) documents.push(doc);
         }
 
         cursor = result.next_cursor ?? undefined;
@@ -498,35 +497,51 @@ export class NotionConnector extends BaseConnector {
   ): Promise<string> {
     if (depth >= MAX_BLOCK_DEPTH) return "";
 
-    const response = await this.fetchWithRetry(
-      `${NOTION_API_BASE}/blocks/${blockId}/children?page_size=100`,
-      { headers: buildHeaders(credentials) },
-    );
-
-    if (!response.ok) return "";
-
-    const result = (await response.json()) as ListBlockChildrenResponse;
-    const blocks = result.results;
-
     const parts: string[] = [];
+    let cursor: string | undefined;
+    let hasMore = true;
 
-    for (const block of blocks) {
-      const text = extractBlockText(block);
-      if (text) parts.push(text);
+    while (hasMore) {
+      await this.rateLimit();
 
-      if (
-        block.object === "block" &&
-        "has_children" in block &&
-        block.has_children &&
-        depth < MAX_BLOCK_DEPTH - 1
-      ) {
-        const childContent = await this.fetchPageContent(
-          block.id,
-          credentials,
-          depth + 1,
+      const url = cursor
+        ? `${NOTION_API_BASE}/blocks/${blockId}/children?page_size=100&start_cursor=${cursor}`
+        : `${NOTION_API_BASE}/blocks/${blockId}/children?page_size=100`;
+
+      const response = await this.fetchWithRetry(url, {
+        headers: buildHeaders(credentials),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+          `Failed to fetch blocks for ${blockId}: HTTP ${response.status}: ${body.slice(0, 200)}`,
         );
-        if (childContent) parts.push(childContent);
       }
+
+      const result = (await response.json()) as ListBlockChildrenResponse;
+
+      for (const block of result.results) {
+        const text = extractBlockText(block);
+        if (text) parts.push(text);
+
+        if (
+          block.object === "block" &&
+          "has_children" in block &&
+          block.has_children &&
+          depth < MAX_BLOCK_DEPTH - 1
+        ) {
+          const childContent = await this.fetchPageContent(
+            block.id,
+            credentials,
+            depth + 1,
+          );
+          if (childContent) parts.push(childContent);
+        }
+      }
+
+      cursor = result.next_cursor ?? undefined;
+      hasMore = result.has_more === true && !!cursor;
     }
 
     return parts.join("\n");

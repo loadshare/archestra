@@ -355,7 +355,7 @@ describe("NotionConnector", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
-    it("continues sync when page content fetch fails", async () => {
+    it("skips page and continues sync when block content fetch fails", async () => {
       const connector = new NotionConnector();
       const fetchMock = vi.spyOn(
         connector as unknown as {
@@ -374,7 +374,8 @@ describe("NotionConnector", () => {
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["Good content"]));
       fetchMock.mockResolvedValueOnce({
         ok: false,
-        json: async () => ({}),
+        status: 500,
+        text: async () => "Internal Server Error",
       } as unknown as Response);
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["More content"]));
 
@@ -387,10 +388,14 @@ describe("NotionConnector", () => {
         batches.push(batch);
       }
 
-      expect(batches[0].documents).toHaveLength(3);
+      // page-2 is skipped (block fetch failed), remaining pages still indexed
+      expect(batches[0].documents).toHaveLength(2);
       expect(batches[0].documents[0].content).toContain("Good content");
-      expect(batches[0].documents[1].content).toBe("# Bad Page");
-      expect(batches[0].documents[2].content).toContain("More content");
+      expect(batches[0].documents[1].content).toContain("More content");
+      // page-2 failure recorded
+      expect(batches[0].failures).toHaveLength(1);
+      const failures = batches[0].failures ?? [];
+      expect(failures[0]?.itemId).toBe("page-2");
     });
 
     it("throws when search endpoint returns error", async () => {
@@ -828,10 +833,9 @@ describe("NotionConnector", () => {
         lastEditedTime: "2024-01-20T00:00:00.000Z",
       });
 
-      // page fetches for both (metadata always fetched)
+      // page fetches for both, blocks only for new-page
       fetchMock.mockResolvedValueOnce(makePageResponse(oldPage));
       fetchMock.mockResolvedValueOnce(makePageResponse(newPage));
-      // blocks only for new-page (old-page content is skipped)
       fetchMock.mockResolvedValueOnce(makeBlocksResponse(["New content"]));
 
       const batches: ConnectorSyncBatch[] = [];
@@ -843,10 +847,10 @@ describe("NotionConnector", () => {
         batches.push(batch);
       }
 
-      // Both pages returned (metadata still upserted), but only new-page has content
-      expect(batches[0].documents).toHaveLength(2);
-      expect(batches[0].documents[0].content).toBe("# Unchanged"); // no body
-      expect(batches[0].documents[1].content).toContain("New content");
+      // Unchanged page is skipped entirely to avoid overwriting stored content
+      // with a title-only document. Only the changed page is returned.
+      expect(batches[0].documents).toHaveLength(1);
+      expect(batches[0].documents[0].content).toContain("New content");
       // fetchWithRetry: 2 page fetches + 1 blocks fetch = 3 total
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
@@ -926,6 +930,78 @@ describe("NotionConnector", () => {
       expect(content).toContain("- List item");
       expect(content).toContain("> A quote");
       expect(content).toContain("```\nconst x = 1\n```");
+    });
+
+    it("paginates block children when response has more pages", async () => {
+      const connector = new NotionConnector();
+      const fetchMock = vi.spyOn(
+        connector as unknown as {
+          fetchWithRetry: (...args: unknown[]) => unknown;
+        },
+        "fetchWithRetry",
+      );
+
+      const page = makePage("page-1", "Long Page");
+      fetchMock.mockResolvedValueOnce(makePageResponse(page));
+
+      // First blocks page — has_more=true
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          object: "list",
+          type: "block",
+          block: {},
+          results: [
+            {
+              object: "block",
+              id: "b1",
+              type: "paragraph",
+              has_children: false,
+              paragraph: { rich_text: [{ plain_text: "First batch" }] },
+            },
+          ],
+          has_more: true,
+          next_cursor: "block-cursor-abc",
+        }),
+      } as unknown as Response);
+
+      // Second blocks page — final
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          object: "list",
+          type: "block",
+          block: {},
+          results: [
+            {
+              object: "block",
+              id: "b2",
+              type: "paragraph",
+              has_children: false,
+              paragraph: { rich_text: [{ plain_text: "Second batch" }] },
+            },
+          ],
+          has_more: false,
+          next_cursor: null,
+        }),
+      } as unknown as Response);
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: { pageIds: ["page-1"] },
+        credentials,
+        checkpoint: null,
+      })) {
+        batches.push(batch);
+      }
+
+      const content = batches[0].documents[0].content;
+      expect(content).toContain("First batch");
+      expect(content).toContain("Second batch");
+
+      // Verify pagination cursor was used in second blocks call
+      const thirdCallUrl = (fetchMock.mock.calls[2] as unknown[])[0] as string;
+      expect(thirdCallUrl).toContain("start_cursor=block-cursor-abc");
     });
   });
 
