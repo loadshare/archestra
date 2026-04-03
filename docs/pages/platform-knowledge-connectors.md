@@ -105,6 +105,20 @@ Ingests pages from Notion workspaces using the Notion API. Page content is fetch
 
 Authentication uses a [Notion integration token](https://www.notion.so/my-integrations) (starts with `secret_`). Create an internal integration in your Notion workspace and share the relevant pages or databases with it. Incremental sync uses the `last_edited_time` field to fetch only pages modified since the last run.
 
+## SharePoint
+
+Ingests documents and site pages from SharePoint Online via the Microsoft Graph API. Text content is extracted from supported file types (.txt, .md, .csv, .json, .xml, .html, .yaml). Site pages are synced with content extracted from web parts.
+
+| Field         | Description                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| Tenant ID     | Your Azure AD (Entra ID) tenant ID or domain (e.g., `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)         |
+| Site URL      | Your SharePoint site URL (e.g., `https://your-tenant.sharepoint.com/sites/your-site`)               |
+| Drive IDs     | Comma-separated document library IDs to sync (optional -- leave blank to sync all site libraries)   |
+| Folder Path   | Restrict sync to a specific folder path within each drive (optional)                                |
+| Include Pages | Toggle to sync site pages and their web part content (default: on)                                  |
+
+Authentication uses Azure AD app registration with client credentials (OAuth2). Provide the **Client ID** in the Email field and the **Client Secret** in the API Token field. The app registration requires `Sites.Read.All` permission on Microsoft Graph. Incremental sync uses the `lastModifiedDateTime` field to fetch only items modified since the last run.
+
 ## Managing Connectors
 
 Connectors can be managed from either the **Connectors** page or a knowledge base's detail page. After creation you can:

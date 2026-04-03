@@ -31,6 +31,7 @@ import { JiraConfigFields } from "./jira-config-fields";
 import { NotionConfigFields } from "./notion-config-fields";
 import { SchedulePicker } from "./schedule-picker";
 import { ServiceNowConfigFields } from "./servicenow-config-fields";
+import { SharePointConfigFields } from "./sharepoint-config-fields";
 import { transformConfigArrayFields } from "./transform-config-array-fields";
 
 type ConnectorItem = Pick<
@@ -311,6 +312,51 @@ export function EditConnectorDialog({
             />
           )}
 
+          {connectorType === "sharepoint" && (
+            <FormField
+              control={form.control}
+              name="config.tenantId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tenant ID</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      {...field}
+                      value={(field.value as string) ?? ""}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Your Azure AD (Entra ID) tenant ID or domain.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          {connectorType === "sharepoint" && (
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Client ID</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Leave empty to keep existing credentials"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Azure AD app registration Client ID.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
           <FormField
             control={form.control}
             name="apiToken"
@@ -321,11 +367,13 @@ export function EditConnectorDialog({
                     ? "Password"
                     : connectorType === "notion"
                       ? "Integration Token"
-                      : needsEmail
-                        ? emailRequired
-                          ? "API Token"
-                          : "API Token / Personal Access Token"
-                        : "Personal Access Token"}
+                      : connectorType === "sharepoint"
+                        ? "Client Secret"
+                        : needsEmail
+                          ? emailRequired
+                            ? "API Token"
+                            : "API Token / Personal Access Token"
+                          : "Personal Access Token"}
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -369,6 +417,9 @@ export function EditConnectorDialog({
                 <ServiceNowConfigFields form={form} hideUrl />
               )}
               {connectorType === "notion" && <NotionConfigFields form={form} />}
+              {connectorType === "sharepoint" && (
+                <SharePointConfigFields form={form} />
+              )}
             </CollapsibleContent>
           </Collapsible>
         </div>
@@ -443,6 +494,16 @@ function getEditUrlConfig(type: ConnectorType): {
       };
     case "notion":
       return { typeLabel: "Notion", urlFields: null };
+    case "sharepoint":
+      return {
+        typeLabel: "SharePoint",
+        urlFields: {
+          fieldName: "config.siteUrl",
+          label: "Site URL",
+          placeholder: "https://your-tenant.sharepoint.com/sites/your-site",
+          description: "Your SharePoint site URL.",
+        },
+      };
     default:
       return {
         typeLabel: type,
