@@ -1,6 +1,11 @@
 import { ClientSecretCredential } from "@azure/identity";
 import { Client, ResponseType } from "@microsoft/microsoft-graph-client";
 import { TokenCredentialAuthenticationProvider } from "@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials/index.js";
+import type {
+  DriveItem as GraphDriveItem,
+  SitePage as GraphSitePage,
+} from "@microsoft/microsoft-graph-types";
+import type { ModelInputModality } from "@shared";
 import JSZip from "jszip";
 import mammoth from "mammoth";
 import type {
@@ -110,7 +115,7 @@ export class SharePointConnector extends BaseConnector {
     checkpoint: Record<string, unknown> | null;
     startTime?: Date;
     endTime?: Date;
-    embeddingInputModalities?: string[];
+    embeddingInputModalities?: ModelInputModality[];
   }): AsyncGenerator<ConnectorSyncBatch> {
     const parsed = parseSharePointConfig(params.config);
     if (!parsed) {
@@ -598,29 +603,35 @@ type GraphListResponse<T> = {
   "@odata.nextLink"?: string;
 };
 
-// Narrowed from @microsoft/microsoft-graph-types — the SDK types make every field
-// NullableOption<T> | undefined, but our $select queries guarantee these fields exist.
-type DriveItem = {
-  id: string;
-  name: string;
-  webUrl: string;
-  lastModifiedDateTime: string;
-  createdDateTime: string;
-  size: number;
-  file?: { mimeType: string };
-  folder?: { childCount: number };
-  parentReference?: { path: string };
+// Narrowed from @microsoft/microsoft-graph-types using Pick + Required + NonNullable.
+// Our $select queries guarantee these fields are present and non-null.
+type RequiredNonNull<T, K extends keyof T> = {
+  [P in K]-?: NonNullable<T[P]>;
 };
 
-type SitePage = {
-  id: string;
-  name: string;
-  title: string;
-  webUrl: string;
-  lastModifiedDateTime: string;
-  createdDateTime: string;
-  description?: string;
-};
+type DriveItem = RequiredNonNull<
+  GraphDriveItem,
+  | "id"
+  | "name"
+  | "webUrl"
+  | "lastModifiedDateTime"
+  | "createdDateTime"
+  | "size"
+  | "file"
+  | "folder"
+  | "parentReference"
+>;
+
+type SitePage = RequiredNonNull<
+  GraphSitePage,
+  | "id"
+  | "name"
+  | "title"
+  | "webUrl"
+  | "lastModifiedDateTime"
+  | "createdDateTime"
+  | "description"
+>;
 
 function subtractSafetyBuffer(isoDate: string): string {
   return new Date(

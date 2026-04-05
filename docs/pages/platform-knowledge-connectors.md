@@ -118,6 +118,7 @@ Ingests documents and site pages from SharePoint Online via the Microsoft Graph 
 | Drive IDs     | Comma-separated document library IDs to sync (optional -- leave blank to sync all site libraries)   |
 | Folder Path   | Restrict sync to a specific folder path within each drive (optional)                                |
 | Include Pages | Toggle to sync site pages and their web part content (default: on)                                  |
+| Batch Size    | Items per batch (default: 50)                                                                       |
 
 Authentication uses an Azure AD app registration with client credentials (OAuth2). The app registration requires the `Sites.Read.All` permission on Microsoft Graph. Incremental sync uses the `lastModifiedDateTime` field to fetch only items modified since the last run.
 
