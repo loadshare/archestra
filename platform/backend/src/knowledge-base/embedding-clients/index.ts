@@ -27,7 +27,7 @@ const RETRYABLE_NETWORK_ERROR_CODES = new Set([
  * Accepts both text strings and inline image inputs (multimodal).
  * Image inputs are only meaningful for providers/models that support multimodal
  * embedding (e.g. Gemini gemini-embedding-2-preview). OpenAI-compatible providers
- * fall back to a "[image]" placeholder for non-text inputs.
+ * throw on non-text inputs — images should never reach them in normal operation.
  */
 export async function callEmbedding(params: {
   inputs: EmbeddingInput[];

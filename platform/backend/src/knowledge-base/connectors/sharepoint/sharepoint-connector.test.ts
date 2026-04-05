@@ -586,4 +586,65 @@ describe("SharePointConnector", () => {
       expect(apiCalls.some((u) => u.includes("/pages"))).toBe(false);
     });
   });
+
+  describe("checkpoint monotonicity", () => {
+    it("does not regress checkpoint when pages have older timestamps than drive items", async () => {
+      const connector = new SharePointConnector();
+      const { mockGet } = setupMockClient(connector);
+
+      const driveTimestamp = "2024-03-01T10:00:00.000Z";
+      const pageTimestamp = "2024-01-15T08:00:00.000Z";
+
+      mockGet
+        // resolveSiteId
+        .mockResolvedValueOnce({ id: "site-1" })
+        // listDriveIds
+        .mockResolvedValueOnce({ value: [{ id: "drive-1" }] })
+        // drive items — newer timestamp
+        .mockResolvedValueOnce({
+          value: [
+            makeDriveItem("d1", "report.txt", { lastModified: driveTimestamp }),
+          ],
+        })
+        // download file content
+        .mockResolvedValueOnce(makeFileBuffer("Report content"))
+        // site pages — older timestamp
+        .mockResolvedValueOnce({
+          value: [
+            makeSitePage("p1", "Old Page", { lastModified: pageTimestamp }),
+          ],
+        })
+        // page webParts
+        .mockResolvedValueOnce({ value: [{ innerHtml: "<p>Page text</p>" }] });
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: {
+          tenantId: "test-tenant-id",
+          siteUrl: "https://tenant.sharepoint.com/sites/test",
+        },
+        credentials,
+        checkpoint: null,
+      })) {
+        batches.push(batch);
+      }
+
+      // Should have 2 batches: one from drives, one from pages
+      expect(batches.length).toBe(2);
+
+      // The final checkpoint (from the pages batch) must NOT regress
+      // to the older page timestamp — it must keep the drive timestamp
+      const finalCheckpoint = batches[batches.length - 1].checkpoint as {
+        lastSyncedAt: string;
+      };
+      expect(finalCheckpoint.lastSyncedAt).toBe(
+        new Date(driveTimestamp).toISOString(),
+      );
+
+      // Verify it did NOT use the older page timestamp
+      expect(finalCheckpoint.lastSyncedAt).not.toBe(
+        new Date(pageTimestamp).toISOString(),
+      );
+    });
+  });
 });

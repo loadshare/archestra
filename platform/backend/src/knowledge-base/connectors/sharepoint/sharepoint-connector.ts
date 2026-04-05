@@ -139,6 +139,13 @@ export class SharePointConnector extends BaseConnector {
       );
     }
 
+    // Track the highest lastModifiedDateTime seen across all phases (drives + pages)
+    // so the checkpoint only advances monotonically and a later phase with older
+    // timestamps cannot regress progress from an earlier phase.
+    const progress = {
+      maxLastModified: checkpoint.lastSyncedAt as string | undefined,
+    };
+
     this.log.debug(
       {
         siteId,
@@ -156,7 +163,7 @@ export class SharePointConnector extends BaseConnector {
       client,
       siteId,
       config: parsed,
-      checkpoint,
+      progress,
       syncFrom: safetyBufferedSyncFrom,
       batchSize,
       supportsImages,
@@ -167,7 +174,7 @@ export class SharePointConnector extends BaseConnector {
       yield* this.syncSitePages({
         client,
         siteId,
-        checkpoint,
+        progress,
         syncFrom: safetyBufferedSyncFrom,
         batchSize,
       });
@@ -223,7 +230,7 @@ export class SharePointConnector extends BaseConnector {
     client: Client;
     siteId: string;
     config: SharePointConfig;
-    checkpoint: SharePointCheckpoint;
+    progress: { maxLastModified: string | undefined };
     syncFrom: string | undefined;
     batchSize: number;
     supportsImages: boolean;
@@ -232,7 +239,7 @@ export class SharePointConnector extends BaseConnector {
       client,
       siteId,
       config,
-      checkpoint,
+      progress,
       syncFrom,
       batchSize,
       supportsImages,
@@ -251,7 +258,7 @@ export class SharePointConnector extends BaseConnector {
         client,
         driveId,
         folderPath: config.folderPath,
-        checkpoint,
+        progress,
         syncFrom,
         batchSize,
         hasMoreDrives: !isLastDrive,
@@ -281,7 +288,7 @@ export class SharePointConnector extends BaseConnector {
     client: Client;
     driveId: string;
     folderPath: string | undefined;
-    checkpoint: SharePointCheckpoint;
+    progress: { maxLastModified: string | undefined };
     syncFrom: string | undefined;
     batchSize: number;
     hasMoreDrives: boolean;
@@ -291,7 +298,7 @@ export class SharePointConnector extends BaseConnector {
       client,
       driveId,
       folderPath,
-      checkpoint,
+      progress,
       syncFrom,
       batchSize,
       hasMoreDrives,
@@ -361,6 +368,14 @@ export class SharePointConnector extends BaseConnector {
       const lastResult = result.value[result.value.length - 1];
       const lastModified = lastResult?.lastModifiedDateTime;
 
+      // Advance the monotonic high-water mark
+      if (
+        lastModified &&
+        (!progress.maxLastModified || lastModified > progress.maxLastModified)
+      ) {
+        progress.maxLastModified = lastModified;
+      }
+
       batchIndex++;
       this.log.debug(
         {
@@ -378,8 +393,10 @@ export class SharePointConnector extends BaseConnector {
         failures: this.flushFailures(),
         checkpoint: buildCheckpoint({
           type: "sharepoint",
-          itemUpdatedAt: lastModified ? new Date(lastModified) : undefined,
-          previousLastSyncedAt: checkpoint.lastSyncedAt,
+          itemUpdatedAt: progress.maxLastModified
+            ? new Date(progress.maxLastModified)
+            : undefined,
+          previousLastSyncedAt: progress.maxLastModified,
         }),
         hasMore: hasMore || hasMoreDrives,
       };
@@ -449,11 +466,11 @@ export class SharePointConnector extends BaseConnector {
   private async *syncSitePages(params: {
     client: Client;
     siteId: string;
-    checkpoint: SharePointCheckpoint;
+    progress: { maxLastModified: string | undefined };
     syncFrom: string | undefined;
     batchSize: number;
   }): AsyncGenerator<ConnectorSyncBatch> {
-    const { client, siteId, checkpoint, syncFrom, batchSize } = params;
+    const { client, siteId, progress, syncFrom, batchSize } = params;
 
     let url = buildSitePagesUrl(siteId, batchSize);
     let hasMore = true;
@@ -506,6 +523,14 @@ export class SharePointConnector extends BaseConnector {
       const lastPage = result.value[result.value.length - 1];
       const lastModified = lastPage?.lastModifiedDateTime;
 
+      // Advance the monotonic high-water mark
+      if (
+        lastModified &&
+        (!progress.maxLastModified || lastModified > progress.maxLastModified)
+      ) {
+        progress.maxLastModified = lastModified;
+      }
+
       batchIndex++;
       this.log.debug(
         {
@@ -522,8 +547,10 @@ export class SharePointConnector extends BaseConnector {
         failures: this.flushFailures(),
         checkpoint: buildCheckpoint({
           type: "sharepoint",
-          itemUpdatedAt: lastModified ? new Date(lastModified) : undefined,
-          previousLastSyncedAt: checkpoint.lastSyncedAt,
+          itemUpdatedAt: progress.maxLastModified
+            ? new Date(progress.maxLastModified)
+            : undefined,
+          previousLastSyncedAt: progress.maxLastModified,
         }),
         hasMore,
       };

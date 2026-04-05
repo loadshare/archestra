@@ -10,6 +10,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 interface SharePointConfigFieldsProps {
   // biome-ignore lint/suspicious/noExplicitAny: form type is generic across different form schemas
@@ -64,6 +65,27 @@ export function SharePointConfigFields({
               Restrict sync to a specific folder path within each drive.
             </FormDescription>
             <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name={`${prefix}.includePages`}
+        render={({ field }) => (
+          <FormItem className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <FormLabel>Include Pages</FormLabel>
+              <FormDescription>
+                Sync site pages and their web part content.
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                checked={field.value ?? true}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
           </FormItem>
         )}
       />
