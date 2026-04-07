@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.2.4](https://github.com/archestra-ai/archestra/compare/platform-v1.2.3...platform-v1.2.4) (2026-04-07)
+
+
+### Features
+
+* add Azure AI Foundry (Azure OpenAI) as LLM provider ([#3659](https://github.com/archestra-ai/archestra/issues/3659)) ([6a0b207](https://github.com/archestra-ai/archestra/commit/6a0b207ae62a9e6e65d14111d5a92e77c32ed8ba))
+* add connector-level knowledge source ACLs ([#3416](https://github.com/archestra-ai/archestra/issues/3416)) ([6039794](https://github.com/archestra-ai/archestra/commit/60397949df985816db87d75339d8a596ddeb6527))
+* prefer upstream credentials over JWT propagation for JWKS auth ([#3061](https://github.com/archestra-ai/archestra/issues/3061)) ([68ef87a](https://github.com/archestra-ai/archestra/commit/68ef87a624d057aba4c7a2cb54c6c6691a8d91cb))
+
+
+### Documentation
+
+* add platform overview page ([#3625](https://github.com/archestra-ai/archestra/issues/3625)) ([9b914e3](https://github.com/archestra-ai/archestra/commit/9b914e389bb3567809fccab6fbe881c0d3ea990a))
+
+
+### Miscellaneous Chores
+
+* add MCP session TTL cleanup and fix app metrics pod aggregation ([#3647](https://github.com/archestra-ai/archestra/issues/3647)) ([d1abfd9](https://github.com/archestra-ai/archestra/commit/d1abfd9194d1c6b023ab0e3f326e15aca5c62e63))
+* fix oauth consent and mcp auth guidance ([#3654](https://github.com/archestra-ai/archestra/issues/3654)) ([5f4f210](https://github.com/archestra-ai/archestra/commit/5f4f210a9d310eb927c347909b9cbb45253b2ef5))
+* increase `minimum-release-age` to 7 days ([#3642](https://github.com/archestra-ai/archestra/issues/3642)) ([655dcb2](https://github.com/archestra-ai/archestra/commit/655dcb21f1f7dc8bd85d435cb33071c1e76cf6bf))
+* mcp gateway slug ([#3652](https://github.com/archestra-ai/archestra/issues/3652)) ([53f375f](https://github.com/archestra-ai/archestra/commit/53f375f24da27594337dbf2d5903703ba636a247))
+
+## [1.2.3](https://github.com/archestra-ai/archestra/compare/platform-v1.2.2...platform-v1.2.3) (2026-04-03)
+
+
+### Features
+
+* add Notion knowledge connector ([#3555](https://github.com/archestra-ai/archestra/issues/3555)) ([808f5b7](https://github.com/archestra-ai/archestra/commit/808f5b7f7e7060a31c82b1929bc676b85f35619f))
+* propagate tool guardrails through subagent delegation and clarify scoped access control docs ([#3627](https://github.com/archestra-ai/archestra/issues/3627)) ([1ad51ca](https://github.com/archestra-ai/archestra/commit/1ad51cab702acb1fbaebb8d5ca2b76f323ef8fc3))
+
+
+### Bug Fixes
+
+* add MCP auth extensions and streamline self-hosted auth flows ([#3633](https://github.com/archestra-ai/archestra/issues/3633)) ([95c3db9](https://github.com/archestra-ai/archestra/commit/95c3db99b028f8f517979a3ccdb90a8168ab804a))
+* align KB observability metrics and rollout defaults ([#3635](https://github.com/archestra-ai/archestra/issues/3635)) ([de571d3](https://github.com/archestra-ai/archestra/commit/de571d30cd99ca52517a031012936e78dd78ef9f))
+* format playwright.config.ts to pass biome CI ([#3631](https://github.com/archestra-ai/archestra/issues/3631)) ([6f0df4d](https://github.com/archestra-ai/archestra/commit/6f0df4d5d4721bb56131104eff8d7dbb046f7169))
+* simplify chat state and swap-agent handling ([#3636](https://github.com/archestra-ai/archestra/issues/3636)) ([e2d70c1](https://github.com/archestra-ai/archestra/commit/e2d70c11a2af3e695f05f255fba0c22896d9564a))
+
+
+### Miscellaneous Chores
+
+* change playwright workers ([#3618](https://github.com/archestra-ai/archestra/issues/3618)) ([bd4836d](https://github.com/archestra-ai/archestra/commit/bd4836d8b9fb5260a3baf0476109bb52df6dc5ed))
+
 ## [1.2.2](https://github.com/archestra-ai/archestra/compare/platform-v1.2.1...platform-v1.2.2) (2026-04-01)
 
 
