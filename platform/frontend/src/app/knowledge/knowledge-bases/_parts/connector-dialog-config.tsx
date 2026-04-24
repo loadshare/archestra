@@ -17,6 +17,7 @@ import { GitlabConfigFields } from "./gitlab-config-fields";
 import { JiraConfigFields } from "./jira-config-fields";
 import { LinearConfigFields } from "./linear-config-fields";
 import { NotionConfigFields } from "./notion-config-fields";
+import { OneDriveConfigFields } from "./onedrive-config-fields";
 import { OutlineConfigFields } from "./outline-config-fields";
 import { SalesforceConfigFields } from "./salesforce-config-fields";
 import { ServiceNowConfigFields } from "./servicenow-config-fields";
@@ -65,6 +66,7 @@ const CONNECTOR_DISPLAY_LABELS: Record<ConnectorType, string> = {
   dropbox: "Dropbox",
   asana: CONNECTOR_TYPE_LABELS.asana,
   outline: CONNECTOR_TYPE_LABELS.outline,
+  onedrive: CONNECTOR_TYPE_LABELS.onedrive ?? "OneDrive",
   salesforce: CONNECTOR_TYPE_LABELS.salesforce ?? "Salesforce",
 };
 
@@ -130,6 +132,11 @@ export const CONNECTOR_OPTIONS: ConnectorOption[] = [
     description: "Sync documents from Outline",
   },
   {
+    type: "onedrive",
+    label: CONNECTOR_DISPLAY_LABELS.onedrive,
+    description: "Sync files and documents from OneDrive for Business",
+  },
+  {
     type: "salesforce",
     label: CONNECTOR_DISPLAY_LABELS.salesforce,
     description: "Sync CRM objects from Salesforce",
@@ -185,6 +192,7 @@ const CONNECTOR_URL_CONFIGS: Record<ConnectorType, ConnectorUrlConfig | null> =
     gdrive: null,
     dropbox: null,
     asana: null,
+    onedrive: null,
     outline: {
       fieldName: "config.outlineUrl",
       label: "Instance URL",
@@ -218,6 +226,7 @@ const CREATE_ADVANCED_CONFIG_FIELDS: Record<
   gdrive: ({ form }) => <GoogleDriveConfigFields form={form} />,
   dropbox: ({ form }) => <DropboxConfigFields control={form.control} />,
   asana: ({ form }) => <AsanaConfigFields form={form} hideWorkspaceGid />,
+  onedrive: ({ form }) => <OneDriveConfigFields form={form} />,
   outline: ({ form }) => <OutlineConfigFields form={form} />,
   salesforce: ({ form }) => <SalesforceConfigFields form={form} />,
 };
@@ -282,6 +291,7 @@ export function getDefaultConnectorConfig(
     gdrive: { type, recursive: true },
     dropbox: { type, rootPath: "" },
     asana: { type },
+    onedrive: { type, userIds: "", recursive: true },
     outline: { type, outlineUrl: "https://app.getoutline.com" },
     salesforce: { type, loginUrl: "https://login.salesforce.com" },
   };
@@ -321,6 +331,7 @@ export function getConnectorCredentialConfig(params: {
     gitlab: "Personal Access Token",
     linear: "Personal Access Token",
     asana: "Personal Access Token",
+    onedrive: "Client Secret",
     salesforce: "Password + Security Token",
   };
 
@@ -337,6 +348,7 @@ export function getConnectorCredentialConfig(params: {
     gitlab: "Your personal access token",
     linear: "Your personal access token",
     asana: "Your personal access token",
+    onedrive: "Your Azure AD client secret",
     salesforce: "Your Salesforce password followed by your security token",
   };
 
@@ -354,6 +366,7 @@ export function getConnectorCredentialConfig(params: {
     gitlab: "Leave empty to keep existing token",
     linear: "Leave empty to keep existing token",
     asana: "Leave empty to keep existing token",
+    onedrive: "Leave empty to keep existing token",
   };
 
   const apiTokenRequiredMessages: Record<ConnectorType, string> = {
@@ -369,6 +382,7 @@ export function getConnectorCredentialConfig(params: {
     gitlab: "Personal access token is required",
     linear: "Personal access token is required",
     asana: "Personal access token is required",
+    onedrive: "Client secret is required",
     salesforce: "Password and security token are required",
   };
 
@@ -396,6 +410,15 @@ function getApiTokenHelpText(params: {
     return (
       <p className="text-[0.8rem] text-muted-foreground">
         The Azure AD app registration requires the <code>Sites.Read.All</code>{" "}
+        permission on Microsoft Graph.
+      </p>
+    );
+  }
+
+  if (params.type === "onedrive") {
+    return (
+      <p className="text-[0.8rem] text-muted-foreground">
+        The Azure AD app registration requires the <code>Files.Read.All</code>{" "}
         permission on Microsoft Graph.
       </p>
     );

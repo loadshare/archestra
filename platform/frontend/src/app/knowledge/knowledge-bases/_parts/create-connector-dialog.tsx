@@ -462,7 +462,8 @@ export function CreateConnectorDialog({
                   />
                 )}
 
-                {connectorType === "sharepoint" && (
+                {(connectorType === "sharepoint" ||
+                  connectorType === "onedrive") && (
                   <FormField
                     control={form.control}
                     name="config.tenantId"
@@ -486,7 +487,8 @@ export function CreateConnectorDialog({
                   />
                 )}
 
-                {connectorType === "sharepoint" && (
+                {(connectorType === "sharepoint" ||
+                  connectorType === "onedrive") && (
                   <FormField
                     control={form.control}
                     name="email"
@@ -502,6 +504,31 @@ export function CreateConnectorDialog({
                         </FormControl>
                         <FormDescription>
                           Azure AD app registration Client ID.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {connectorType === "onedrive" && (
+                  <FormField
+                    control={form.control}
+                    name="config.userIds"
+                    rules={{ required: "At least one user ID is required" }}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>User IDs</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="user@example.com, user2@example.com"
+                            {...field}
+                            value={(field.value as string) ?? ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Comma-separated list of user principal names or object
+                          IDs whose OneDrive to sync.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

@@ -414,11 +414,11 @@ function DropEmbeddingConfigDialog({
       title="Drop Embedding Configuration"
       description={
         <div className="space-y-3">
-          <p>
+          <span className="block">
             This will delete all embedded documents and reset connector
             checkpoints. Connectors and knowledge bases are preserved — the next
             sync will re-ingest everything with the new embedding model.
-          </p>
+          </span>
           <Alert variant="destructive" className="py-2">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription className="text-xs">

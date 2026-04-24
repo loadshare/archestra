@@ -26999,7 +26999,7 @@ export type GetKnowledgeBasesResponses = {
             connectors: Array<{
                 id: string;
                 name: string;
-                connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'asana' | 'linear' | 'outline' | 'salesforce';
+                connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'onedrive' | 'asana' | 'linear' | 'outline' | 'salesforce';
             }>;
             totalDocsIndexed: number;
             assignedAgents: Array<{
@@ -27447,7 +27447,7 @@ export type GetConnectorsData = {
         offset?: number;
         knowledgeBaseId?: string;
         search?: string;
-        connectorType?: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'asana' | 'linear' | 'outline' | 'salesforce';
+        connectorType?: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'onedrive' | 'asana' | 'linear' | 'outline' | 'salesforce';
     };
     url: '/api/connectors';
 };
@@ -27523,7 +27523,7 @@ export type GetConnectorsResponses = {
             description: string | null;
             visibility: 'org-wide' | 'team-scoped';
             teamIds: Array<string>;
-            connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'asana' | 'linear' | 'outline' | 'salesforce';
+            connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'onedrive' | 'asana' | 'linear' | 'outline' | 'salesforce';
             config: {
                 type: 'jira';
                 jiraBaseUrl: unknown;
@@ -27603,6 +27603,15 @@ export type GetConnectorsResponses = {
                 recursive?: boolean;
                 maxDepth?: number;
             } | {
+                type: 'onedrive';
+                tenantId: string;
+                userIds: Array<string>;
+                folderId?: string;
+                recursive?: boolean;
+                maxDepth?: number;
+                fileTypes?: Array<string>;
+                batchSize?: number;
+            } | {
                 type: 'asana';
                 workspaceGid: string;
                 projectGids?: Array<string>;
@@ -27664,7 +27673,7 @@ export type CreateConnectorData = {
         description?: string | null;
         visibility?: 'org-wide' | 'team-scoped';
         teamIds?: Array<string>;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'asana' | 'linear' | 'outline' | 'salesforce';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'onedrive' | 'asana' | 'linear' | 'outline' | 'salesforce';
         config: {
             type: 'jira';
             jiraBaseUrl: string;
@@ -27743,6 +27752,15 @@ export type CreateConnectorData = {
             batchSize?: number;
             recursive?: boolean;
             maxDepth?: number;
+        } | {
+            type: 'onedrive';
+            tenantId: string;
+            userIds: Array<string>;
+            folderId?: string;
+            recursive?: boolean;
+            maxDepth?: number;
+            fileTypes?: Array<string>;
+            batchSize?: number;
         } | {
             type: 'asana';
             workspaceGid: string;
@@ -27852,7 +27870,7 @@ export type CreateConnectorResponses = {
         description: string | null;
         visibility: 'org-wide' | 'team-scoped';
         teamIds: Array<string>;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'asana' | 'linear' | 'outline' | 'salesforce';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'onedrive' | 'asana' | 'linear' | 'outline' | 'salesforce';
         config: {
             type: 'jira';
             jiraBaseUrl: unknown;
@@ -27931,6 +27949,15 @@ export type CreateConnectorResponses = {
             batchSize?: number;
             recursive?: boolean;
             maxDepth?: number;
+        } | {
+            type: 'onedrive';
+            tenantId: string;
+            userIds: Array<string>;
+            folderId?: string;
+            recursive?: boolean;
+            maxDepth?: number;
+            fileTypes?: Array<string>;
+            batchSize?: number;
         } | {
             type: 'asana';
             workspaceGid: string;
@@ -28131,7 +28158,7 @@ export type GetConnectorResponses = {
         description: string | null;
         visibility: 'org-wide' | 'team-scoped';
         teamIds: Array<string>;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'asana' | 'linear' | 'outline' | 'salesforce';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'onedrive' | 'asana' | 'linear' | 'outline' | 'salesforce';
         config: {
             type: 'jira';
             jiraBaseUrl: unknown;
@@ -28210,6 +28237,15 @@ export type GetConnectorResponses = {
             batchSize?: number;
             recursive?: boolean;
             maxDepth?: number;
+        } | {
+            type: 'onedrive';
+            tenantId: string;
+            userIds: Array<string>;
+            folderId?: string;
+            recursive?: boolean;
+            maxDepth?: number;
+            fileTypes?: Array<string>;
+            batchSize?: number;
         } | {
             type: 'asana';
             workspaceGid: string;
@@ -28338,6 +28374,15 @@ export type UpdateConnectorData = {
             recursive?: boolean;
             maxDepth?: number;
         } | {
+            type: 'onedrive';
+            tenantId: string;
+            userIds: Array<string>;
+            folderId?: string;
+            recursive?: boolean;
+            maxDepth?: number;
+            fileTypes?: Array<string>;
+            batchSize?: number;
+        } | {
             type: 'asana';
             workspaceGid: string;
             projectGids?: Array<string>;
@@ -28447,7 +28492,7 @@ export type UpdateConnectorResponses = {
         description: string | null;
         visibility: 'org-wide' | 'team-scoped';
         teamIds: Array<string>;
-        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'asana' | 'linear' | 'outline' | 'salesforce';
+        connectorType: 'jira' | 'confluence' | 'github' | 'gitlab' | 'servicenow' | 'notion' | 'sharepoint' | 'gdrive' | 'dropbox' | 'onedrive' | 'asana' | 'linear' | 'outline' | 'salesforce';
         config: {
             type: 'jira';
             jiraBaseUrl: unknown;
@@ -28526,6 +28571,15 @@ export type UpdateConnectorResponses = {
             batchSize?: number;
             recursive?: boolean;
             maxDepth?: number;
+        } | {
+            type: 'onedrive';
+            tenantId: string;
+            userIds: Array<string>;
+            folderId?: string;
+            recursive?: boolean;
+            maxDepth?: number;
+            fileTypes?: Array<string>;
+            batchSize?: number;
         } | {
             type: 'asana';
             workspaceGid: string;
@@ -29144,6 +29198,7 @@ export type GetConnectorRunsResponses = {
             totalBatches: number | null;
             completedBatches: number | null;
             itemErrors: number | null;
+            itemsSkipped: number | null;
             error: string | null;
             checkpoint: string | number | boolean | null | {
                 [key: string]: unknown;
@@ -29248,6 +29303,7 @@ export type GetConnectorRunResponses = {
         totalBatches: number | null;
         completedBatches: number | null;
         itemErrors: number | null;
+        itemsSkipped: number | null;
         error: string | null;
         logs: string | null;
         checkpoint: string | number | boolean | null | {

@@ -819,10 +819,19 @@ async function extractTextFromBinary(
       return result.value;
     }
     case ".pdf": {
-      // Lazy import: pdf-parse v1 tries to load a test file at import time
-      const pdfParse = (await import("pdf-parse")).default;
-      const result = await pdfParse(buffer);
-      return result.text;
+      // Import the internal module directly: pdf-parse v1 runs test-file code
+      // at the top level of its entry point, which fails outside its own repo.
+      const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
+      try {
+        const result = await pdfParse(buffer);
+        return result.text;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("No password") || msg.includes("password")) {
+          return "";
+        }
+        throw err;
+      }
     }
     case ".pptx": {
       return extractTextFromPptx(buffer);

@@ -350,7 +350,7 @@ export function EditConnectorDialog({
             />
           )}
 
-          {connectorType === "sharepoint" && (
+          {(connectorType === "sharepoint" || connectorType === "onedrive") && (
             <FormField
               control={form.control}
               name="config.tenantId"
@@ -373,7 +373,7 @@ export function EditConnectorDialog({
             />
           )}
 
-          {connectorType === "sharepoint" && (
+          {(connectorType === "sharepoint" || connectorType === "onedrive") && (
             <FormField
               control={form.control}
               name="email"
@@ -388,6 +388,34 @@ export function EditConnectorDialog({
                   </FormControl>
                   <FormDescription>
                     Azure AD app registration Client ID.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          {connectorType === "onedrive" && (
+            <FormField
+              control={form.control}
+              name="config.userIds"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>User IDs</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="user@example.com, user2@example.com"
+                      {...field}
+                      value={
+                        Array.isArray(field.value)
+                          ? (field.value as string[]).join(", ")
+                          : ((field.value as string) ?? "")
+                      }
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Comma-separated list of user principal names or object IDs
+                    whose OneDrive to sync.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

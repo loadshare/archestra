@@ -1,5 +1,5 @@
 {
-  "id": "978d2384-d87c-48ab-a2c9-e045036f3677",
+  "id": "80c53ee2-f1da-476d-a60e-762b33de95b4",
   "prevId": "77b60632-9ed9-4c03-9232-335526e56f6d",
   "version": "7",
   "dialect": "postgresql",
@@ -1571,6 +1571,13 @@
         },
         "item_errors": {
           "name": "item_errors",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "items_skipped": {
+          "name": "items_skipped",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -6250,30 +6257,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 31536000
-        },
-        "connection_default_mcp_gateway_id": {
-          "name": "connection_default_mcp_gateway_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connection_default_llm_proxy_id": {
-          "name": "connection_default_llm_proxy_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connection_shown_client_ids": {
-          "name": "connection_shown_client_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connection_shown_providers": {
-          "name": "connection_shown_providers",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
