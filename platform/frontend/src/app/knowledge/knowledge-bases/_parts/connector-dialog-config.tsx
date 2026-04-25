@@ -7,6 +7,16 @@ import {
 } from "@shared";
 import type { ReactNode } from "react";
 import type { UseFormReturn } from "react-hook-form";
+import {
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { getFrontendDocsUrl } from "@/lib/docs/docs";
 import { AsanaConfigFields } from "./asana-config-fields";
 import { ConfluenceConfigFields } from "./confluence-config-fields";
@@ -217,7 +227,7 @@ const CREATE_ADVANCED_CONFIG_FIELDS: Record<
   confluence: ({ form }) => (
     <ConfluenceConfigFields form={form} hideUrl hideIsCloud />
   ),
-  github: ({ form }) => <GithubConfigFields form={form} hideUrl />,
+  github: ({ form }) => <GithubConfigFields form={form} hideUrl hideOwner />,
   gitlab: ({ form }) => <GitlabConfigFields form={form} hideUrl />,
   linear: ({ form }) => <LinearConfigFields form={form} />,
   servicenow: ({ form }) => <ServiceNowConfigFields form={form} hideUrl />,
@@ -236,6 +246,7 @@ const EDIT_ADVANCED_CONFIG_FIELDS: Record<
   (props: AdvancedConfigFieldsProps) => ReactNode
 > = {
   ...CREATE_ADVANCED_CONFIG_FIELDS,
+  github: ({ form }) => <GithubConfigFields form={form} hideUrl />,
   asana: ({ form }) => <AsanaConfigFields form={form} />,
 };
 
@@ -463,4 +474,428 @@ function getApiTokenHelpText(params: {
   }
 
   return undefined;
+}
+
+type InlineConfigFieldsProps = {
+  form: ConnectorForm;
+  emailRequired: boolean;
+  mode: "create" | "edit";
+};
+
+const INLINE_CONFIG_FIELDS: Record<
+  ConnectorType,
+  (props: InlineConfigFieldsProps) => ReactNode
+> = {
+  jira: ({ form, emailRequired, mode }) => (
+    <>
+      <FormField
+        control={form.control}
+        name={"config.isCloud"}
+        render={({ field }) => (
+          <FormItem className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <FormLabel>Cloud Instance</FormLabel>
+              <FormDescription>
+                Enable if this is a cloud-hosted instance.
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                checked={(field.value as boolean) ?? true}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="email"
+        rules={
+          mode === "create"
+            ? {
+                validate: (value) => {
+                  const currentIsCloud = form.getValues("config.isCloud");
+                  if (currentIsCloud !== false && !value)
+                    return "Email is required";
+                  return true;
+                },
+              }
+            : undefined
+        }
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>
+              Email{(mode === "edit" || !emailRequired) && " (optional)"}
+            </FormLabel>
+            <FormControl>
+              <Input
+                type="email"
+                placeholder={
+                  emailRequired
+                    ? "user@example.com"
+                    : "Required for basic auth, leave empty for PAT"
+                }
+                {...field}
+              />
+            </FormControl>
+            {mode === "edit" && (
+              <FormDescription>
+                Leave empty to keep existing credentials unchanged.
+              </FormDescription>
+            )}
+            {mode === "create" && !emailRequired && (
+              <FormDescription>
+                Leave empty to authenticate with a personal access token
+                instead.
+              </FormDescription>
+            )}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  ),
+  confluence: ({ form, emailRequired, mode }) => (
+    <>
+      <FormField
+        control={form.control}
+        name={"config.isCloud"}
+        render={({ field }) => (
+          <FormItem className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <FormLabel>Cloud Instance</FormLabel>
+              <FormDescription>
+                Enable if this is a cloud-hosted instance.
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                checked={(field.value as boolean) ?? true}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="email"
+        rules={
+          mode === "create"
+            ? {
+                validate: (value) => {
+                  const currentIsCloud = form.getValues("config.isCloud");
+                  if (currentIsCloud !== false && !value)
+                    return "Email is required";
+                  return true;
+                },
+              }
+            : undefined
+        }
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>
+              Email{(mode === "edit" || !emailRequired) && " (optional)"}
+            </FormLabel>
+            <FormControl>
+              <Input
+                type="email"
+                placeholder={
+                  emailRequired
+                    ? "user@example.com"
+                    : "Required for basic auth, leave empty for PAT"
+                }
+                {...field}
+              />
+            </FormControl>
+            {mode === "edit" && (
+              <FormDescription>
+                Leave empty to keep existing credentials unchanged.
+              </FormDescription>
+            )}
+            {mode === "create" && !emailRequired && (
+              <FormDescription>
+                Leave empty to authenticate with a personal access token
+                instead.
+              </FormDescription>
+            )}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  ),
+  github: ({ form, mode }) =>
+    mode === "create" ? (
+      <FormField
+        control={form.control}
+        name={"config.owner"}
+        rules={{ required: "Owner is required" }}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Owner</FormLabel>
+            <FormControl>
+              <Input
+                placeholder="my-org"
+                {...field}
+                value={(field.value as string) ?? ""}
+              />
+            </FormControl>
+            <FormDescription>GitHub organization or username.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    ) : (
+      <></>
+    ),
+  gitlab: () => <></>,
+  linear: () => <></>,
+  servicenow: ({ form, mode }) => (
+    <FormField
+      control={form.control}
+      name="email"
+      rules={
+        mode === "create" ? { required: "Username is required" } : undefined
+      }
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Username</FormLabel>
+          <FormControl>
+            <Input
+              placeholder={
+                mode === "create"
+                  ? "admin"
+                  : "Leave empty to keep existing credentials"
+              }
+              {...field}
+            />
+          </FormControl>
+          {mode === "create" && (
+            <FormDescription>
+              Your ServiceNow username for basic authentication.
+            </FormDescription>
+          )}
+          {mode === "edit" && (
+            <FormDescription>
+              Leave empty to keep existing credentials unchanged.
+            </FormDescription>
+          )}
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  ),
+  notion: () => <></>,
+  sharepoint: ({ form, mode }) => (
+    <>
+      <FormField
+        control={form.control}
+        name={"config.tenantId"}
+        rules={
+          mode === "create" ? { required: "Tenant ID is required" } : undefined
+        }
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Tenant ID</FormLabel>
+            <FormControl>
+              <Input
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                {...field}
+                value={(field.value as string) ?? ""}
+              />
+            </FormControl>
+            <FormDescription>
+              Your Azure AD (Entra ID) tenant ID or domain.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="email"
+        rules={
+          mode === "create" ? { required: "Client ID is required" } : undefined
+        }
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Client ID</FormLabel>
+            <FormControl>
+              <Input
+                placeholder={
+                  mode === "create"
+                    ? "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    : "Leave empty to keep existing credentials"
+                }
+                {...field}
+              />
+            </FormControl>
+            <FormDescription>
+              Azure AD app registration Client ID.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  ),
+  gdrive: () => <></>,
+  dropbox: () => <></>,
+  asana: ({ form, mode }) =>
+    mode === "create" ? (
+      <FormField
+        control={form.control}
+        name={"config.workspaceGid"}
+        rules={{ required: "Workspace GID is required" }}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Workspace GID</FormLabel>
+            <FormControl>
+              <Input
+                placeholder="1234567890"
+                {...field}
+                value={(field.value as string) ?? ""}
+              />
+            </FormControl>
+            <FormDescription>
+              Your Asana workspace GID. Syncs top-level tasks only &mdash;
+              subtasks aren&apos;t supported in the initial version.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    ) : (
+      <></>
+    ),
+  onedrive: ({ form, mode }) => (
+    <>
+      <FormField
+        control={form.control}
+        name={"config.tenantId"}
+        rules={
+          mode === "create" ? { required: "Tenant ID is required" } : undefined
+        }
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Tenant ID</FormLabel>
+            <FormControl>
+              <Input
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                {...field}
+                value={(field.value as string) ?? ""}
+              />
+            </FormControl>
+            <FormDescription>
+              Your Azure AD (Entra ID) tenant ID or domain.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="email"
+        rules={
+          mode === "create" ? { required: "Client ID is required" } : undefined
+        }
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Client ID</FormLabel>
+            <FormControl>
+              <Input
+                placeholder={
+                  mode === "create"
+                    ? "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    : "Leave empty to keep existing credentials"
+                }
+                {...field}
+              />
+            </FormControl>
+            <FormDescription>
+              Azure AD app registration Client ID.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name={"config.userIds"}
+        rules={
+          mode === "create"
+            ? { required: "At least one user ID is required" }
+            : undefined
+        }
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>User IDs</FormLabel>
+            <FormControl>
+              <Input
+                placeholder="user@example.com, user2@example.com"
+                {...field}
+                value={
+                  Array.isArray(field.value)
+                    ? (field.value as string[]).join(", ")
+                    : ((field.value as string) ?? "")
+                }
+              />
+            </FormControl>
+            <FormDescription>
+              Comma-separated list of user principal names or object IDs whose
+              OneDrive to sync.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  ),
+  outline: () => <></>,
+  salesforce: ({ form, mode }) => (
+    <FormField
+      control={form.control}
+      name="email"
+      rules={mode === "create" ? { required: "Email is required" } : undefined}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Email{mode === "edit" && " (optional)"}</FormLabel>
+          <FormControl>
+            <Input
+              type="email"
+              placeholder={
+                mode === "create"
+                  ? "user@example.com"
+                  : "Leave empty to keep existing credentials"
+              }
+              {...field}
+            />
+          </FormControl>
+          {mode === "edit" && (
+            <FormDescription>
+              Leave empty to keep existing credentials unchanged.
+            </FormDescription>
+          )}
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  ),
+};
+
+export function ConnectorInlineConfigFields({
+  connectorType,
+  form,
+  mode,
+  emailRequired,
+}: {
+  connectorType: ConnectorType;
+  form: ConnectorForm;
+  mode: "create" | "edit";
+  emailRequired: boolean;
+}) {
+  const renderFields = INLINE_CONFIG_FIELDS[connectorType];
+  return <>{renderFields({ form, emailRequired, mode })}</>;
 }

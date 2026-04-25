@@ -441,13 +441,22 @@ export class OneDriveConnector extends BaseConnector {
     folderId: string;
   }): Promise<string[]> {
     const { client, userId, folderId } = params;
-    const url = buildFolderSubfoldersUrl(userId, folderId);
-    const result = (await client
-      .api(url)
-      .get()) as GraphListResponse<GraphDriveItem>;
-    return (result.value ?? [])
-      .filter((item) => item.folder && !item.file && item.id)
-      .map((item) => item.id as string);
+    let url: string = buildFolderSubfoldersUrl(userId, folderId);
+    const subfolderIds: string[] = [];
+
+    while (url) {
+      const result = (await client
+        .api(url)
+        .get()) as GraphListResponse<GraphDriveItem>;
+      for (const item of result.value ?? []) {
+        if (item.folder && !item.file && item.id) {
+          subfolderIds.push(item.id);
+        }
+      }
+      url = result["@odata.nextLink"] ?? "";
+    }
+
+    return subfolderIds;
   }
 
   private async downloadFileData(

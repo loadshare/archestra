@@ -400,6 +400,55 @@ describe("OneDriveConnector", () => {
       expect(allDocs).toHaveLength(2);
     });
 
+    it("traverses all subfolder pages when listDirectSubfolders response is paginated", async () => {
+      const connector = new OneDriveConnector();
+      const { mockGet } = setupMockClient(connector);
+
+      // listDirectSubfolders("root") — page 1 with nextLink, page 2 terminates
+      mockGet.mockResolvedValueOnce({
+        value: [makeDriveItem("folder-1", "Subfolder1", { isFolder: true })],
+        "@odata.nextLink": "https://graph.microsoft.com/next-page",
+      });
+      mockGet.mockResolvedValueOnce({
+        value: [makeDriveItem("folder-2", "Subfolder2", { isFolder: true })],
+      });
+      // syncFilesInFolder("root"): no files
+      mockGet.mockResolvedValueOnce({ value: [] });
+
+      // listDirectSubfolders("folder-1") → []
+      mockGet.mockResolvedValueOnce({ value: [] });
+      // syncFilesInFolder("folder-1"): one file
+      mockGet.mockResolvedValueOnce({
+        value: [makeDriveItem("file-1", "doc1.txt")],
+      });
+      mockGet.mockResolvedValueOnce(makeFileBuffer("content 1"));
+
+      // listDirectSubfolders("folder-2") → []
+      mockGet.mockResolvedValueOnce({ value: [] });
+      // syncFilesInFolder("folder-2"): one file
+      mockGet.mockResolvedValueOnce({
+        value: [makeDriveItem("file-2", "doc2.txt")],
+      });
+      mockGet.mockResolvedValueOnce(makeFileBuffer("content 2"));
+
+      const batches: ConnectorSyncBatch[] = [];
+      for await (const batch of connector.sync({
+        config: { ...baseConfig, recursive: true },
+        credentials,
+        checkpoint: null,
+      })) {
+        batches.push(batch);
+      }
+
+      const allDocs = batches.flatMap((b) => b.documents);
+      // Both subfolders from both pages must be discovered and synced
+      expect(allDocs).toHaveLength(2);
+      expect(allDocs.map((d) => d.title).sort()).toEqual([
+        "doc1.txt",
+        "doc2.txt",
+      ]);
+    });
+
     it("does not traverse subfolders when recursive is false", async () => {
       const connector = new OneDriveConnector();
       const { mockGet } = setupMockClient(connector);
