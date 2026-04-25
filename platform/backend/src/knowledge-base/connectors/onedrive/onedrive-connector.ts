@@ -23,6 +23,7 @@ import {
   type FolderTraversalAdapter,
   traverseFolders,
 } from "../folder-traversal";
+import { parsePdfBuffer } from "../pdf-utils";
 
 const GRAPH_API_BASE = "https://graph.microsoft.com/v1.0";
 const DEFAULT_BATCH_SIZE = 50;
@@ -707,19 +708,7 @@ async function extractTextFromBinary(
       return result.value;
     }
     case ".pdf": {
-      // Import the internal module directly: pdf-parse v1 runs test-file code
-      // at the top level of its entry point, which fails outside its own repo.
-      const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
-      try {
-        const result = await pdfParse(buffer);
-        return result.text;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("No password") || msg.includes("password")) {
-          return "";
-        }
-        throw err;
-      }
+      return parsePdfBuffer(buffer);
     }
     case ".pptx": {
       return extractTextFromPptx(buffer);
