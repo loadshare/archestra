@@ -1,5 +1,5 @@
 {
-  "id": "e58cda4c-5593-4648-bb01-e7633d9843e4",
+  "id": "5ebe015a-e90a-41cb-9ca9-0973c3e95a69",
   "prevId": "8a0dc127-f0c2-4865-a0bd-7a6ae7a5a47e",
   "version": "7",
   "dialect": "postgresql",
@@ -780,6 +780,13 @@
           "type": "text[]",
           "primaryKey": false,
           "notNull": false
+        },
+        "tool_exposure_mode": {
+          "name": "tool_exposure_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'full'"
         },
         "built_in_agent_config": {
           "name": "built_in_agent_config",
@@ -1571,13 +1578,6 @@
         },
         "item_errors": {
           "name": "item_errors",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 0
-        },
-        "items_skipped": {
-          "name": "items_skipped",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
