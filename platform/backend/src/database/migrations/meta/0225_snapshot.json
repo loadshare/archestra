@@ -1,5 +1,5 @@
 {
-  "id": "1274fc78-8fc3-457b-8e9f-4eed011805af",
+  "id": "46acc03c-c81b-44c3-8a22-10496939b14a",
   "prevId": "0eae590d-a798-4ccf-812c-3fbc39460617",
   "version": "7",
   "dialect": "postgresql",
@@ -1730,13 +1730,6 @@
         },
         "item_errors": {
           "name": "item_errors",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 0
-        },
-        "items_skipped": {
-          "name": "items_skipped",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -4253,6 +4246,12 @@
         "base_url": {
           "name": "base_url",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "extra_headers": {
+          "name": "extra_headers",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
